@@ -33,7 +33,7 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->default()
             ->id('admin')
             ->path('')
@@ -62,7 +62,6 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
-            ->viteTheme('resources/css/filament/admin/theme.css')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverResources(in: app_path('Modules/ProductCategories/Filament/Resources'), for: 'App\Modules\ProductCategories\Filament\Resources')
             ->discoverResources(in: app_path('Modules/Units/Filament/Resources'), for: 'App\Modules\Units\Filament\Resources')
@@ -83,9 +82,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Modules/Reports/Filament/Pages'), for: 'App\Modules\Reports\Filament\Pages')
             ->pages([
                 TenantDashboard::class,
-            ])
-            ->assets([
-                Js::make('chart-js-plugins', Vite::asset('resources/js/filament-chart-js-plugins.js'))->module(),
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
@@ -114,5 +110,18 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+
+        // Vite-backed theme and module assets are only available once the
+        // frontend has been built (manifest present). During the Docker image
+        // build, artisan boots before `npm run build`, so skip them then.
+        if (file_exists(public_path('build/manifest.json'))) {
+            $panel
+                ->viteTheme('resources/css/filament/admin/theme.css')
+                ->assets([
+                    Js::make('chart-js-plugins', Vite::asset('resources/js/filament-chart-js-plugins.js'))->module(),
+                ]);
+        }
+
+        return $panel;
     }
 }

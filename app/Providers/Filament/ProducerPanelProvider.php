@@ -26,11 +26,10 @@ class ProducerPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
+        $panel = $panel
             ->id('producer')
             ->path('producer')
             ->homeUrl(fn (): string => SupplierProductResource::getUrl('index'))
-            ->viteTheme('resources/css/filament/producer/theme.css')
             ->login()
             ->registration(RegisterProducer::class)
             ->passwordReset()
@@ -72,5 +71,14 @@ class ProducerPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+
+        // The Vite-built theme is only available once the frontend has been
+        // built (manifest present). During the Docker image build, artisan
+        // boots before `npm run build`, so skip it then.
+        if (file_exists(public_path('build/manifest.json'))) {
+            $panel->viteTheme('resources/css/filament/producer/theme.css');
+        }
+
+        return $panel;
     }
 }

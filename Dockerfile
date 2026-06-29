@@ -28,8 +28,8 @@ RUN apt-get update \
 
 # --- Composer dependencies (cached layer) ---
 COPY composer.json composer.lock ./
-# Build-time .env so artisan can boot during composer scripts + wayfinder
-RUN cp /dev/null .env || true
+# Build-time .env so artisan can boot during the build (real env is injected
+# at runtime by Coolify; this .env is removed before the runtime stage).
 COPY .env.example .env
 RUN composer install \
         --no-dev \
@@ -45,13 +45,17 @@ RUN npm ci
 # --- Application source ---
 COPY . .
 
-# Finish composer (run scripts + optimized autoloader now that code exists)
-RUN php artisan key:generate --force \
-    && composer dump-autoload --optimize --no-dev \
-    && php artisan package:discover --ansi
+# A throwaway key so artisan can boot during the build (real APP_KEY is
+# injected at runtime via the environment).
+RUN php artisan key:generate --force
 
-# Build frontend (triggers wayfinder:generate via the Vite plugin)
+# Build frontend first so the Vite manifest exists. This also runs
+# wayfinder:generate via the Vite plugin (which boots artisan).
 RUN npm run build
+
+# Optimized autoloader + package manifest, now that code + assets exist
+RUN composer dump-autoload --optimize --no-dev \
+    && php artisan package:discover --ansi
 
 # Drop the build-time .env so it can never leak into the runtime image
 RUN rm -f .env

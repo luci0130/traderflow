@@ -48,9 +48,14 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureFilamentTutorials(): void
     {
-        FilamentAsset::register([
-            Js::make('tutorials', Vite::asset('resources/js/filament-tours.js'))->module(),
-        ]);
+        // Vite::asset() resolves against the build manifest, which is absent
+        // while the Docker image builds (artisan boots before `npm run build`).
+        // Only register the Vite-built script once the manifest exists.
+        if (file_exists(public_path('build/manifest.json'))) {
+            FilamentAsset::register([
+                Js::make('tutorials', Vite::asset('resources/js/filament-tours.js'))->module(),
+            ]);
+        }
 
         // Script data depends on routes/auth, so register it only while a
         // panel is actually serving a request (not during console commands).
