@@ -14,6 +14,10 @@ FROM serversideup/php:${PHP_VERSION}-cli AS build
 USER root
 WORKDIR /app
 
+# PHP extensions required by the app (intl is a hard requirement of
+# filament/support; gd/exif for image handling, bcmath for money math).
+RUN install-php-extensions intl gd bcmath exif
+
 # Install Node 22 (matches local toolchain)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
@@ -60,6 +64,9 @@ FROM serversideup/php:${PHP_VERSION}-fpm-nginx AS runtime
 # serversideup runs as the unprivileged www-data user by default.
 USER root
 WORKDIR /var/www/html
+
+# Same PHP extensions at runtime (intl is required by filament/support)
+RUN install-php-extensions intl gd bcmath exif
 
 # Copy the fully-built application (vendor + public/build included)
 COPY --from=build --chown=www-data:www-data /app /var/www/html
