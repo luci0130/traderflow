@@ -1,0 +1,42 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../app/Modules/**/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/*
+ * Table-layout repeaters only switch from the stacked layout to a real table at
+ * the @xl container width (576px). The supplier-product "Tiered pricing" repeater
+ * lives in a ~480px half-width column, so it never reaches @xl and stacks. Lower
+ * the threshold for that specific repeater so its row (Min qty / Price / delete)
+ * stays on a single line in the right column.
+ */
+@container (min-width: 27rem) {
+    .fi-tiered-pricing-table.fi-fo-table-repeater > table {
+        display: table;
+        width: 100%;
+    }
+
+    .fi-tiered-pricing-table.fi-fo-table-repeater > table > thead {
+        display: table-header-group;
+    }
+
+    .fi-tiered-pricing-table.fi-fo-table-repeater > table > tbody {
+        display: table-row-group;
+    }
+
+    .fi-tiered-pricing-table.fi-fo-table-repeater > table > tbody > tr {
+        display: table-row;
+        padding: 0;
+    }
+
+    .fi-tiered-pricing-table.fi-fo-table-repeater > table > tbody > tr > td {
+        display: table-cell;
+        padding: 0.25rem 0.5rem;
+        vertical-align: middle;
+    }
+
+    .fi-tiered-pricing-table.fi-fo-table-repeater .fi-fo-field-label-content {
+        display: none;
+    }
+}

@@ -1,0 +1,47 @@
+# --- Build artifacts / dependencies (rebuilt inside the image) ---
+node_modules
+vendor
+public/build
+public/hot
+bootstrap/ssr
+
+# --- Local env & secrets (NEVER ship into the image) ---
+.env
+.env.*
+!.env.example
+auth.json
+storage/*.key
+
+# --- SQLite / local data ---
+database/*.sqlite
+database/*.sqlite-*
+
+# --- Caches & logs ---
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/pail
+.phpunit.cache
+.phpunit.result.cache
+
+# --- Wayfinder generated (regenerated during vite build) ---
+resources/js/actions
+resources/js/routes
+resources/js/wayfinder
+
+# --- VCS / tooling / editors ---
+.git
+.github
+.idea
+.vscode
+.zed
+.fleet
+.nova
+.agents
+.codex
+.claude
+.mcp.json
+boost.json
+tests
+*.md

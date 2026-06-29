@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1
+
+# PHP version. serversideup publishes 8.3 / 8.4 (8.5 once stable).
+# composer.json requires php ^8.3, so 8.4 is safe for production.
+ARG PHP_VERSION=8.4
+
+#######################################################################
+# Stage 1 — Build: composer deps + frontend assets (needs PHP + Node)
+#######################################################################
+# Wayfinder runs `php artisan wayfinder:generate` during `vite build`,
+# so this stage MUST have both PHP (with vendor) and Node available.
+FROM serversideup/php:${PHP_VERSION}-cli AS build
+
+USER root
+WORKDIR /app
+
+# Install Node 22 (matches local toolchain)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Composer dependencies (cached layer) ---
+COPY composer.json composer.lock ./
+# Build-time .env so artisan can boot during composer scripts + wayfinder
+RUN cp /dev/null .env || true
+COPY .env.example .env
+RUN composer install \
+        --no-dev \
+        --no-interaction \
+        --prefer-dist \
+        --no-progress \
+        --no-scripts
+
+# --- Node dependencies (cached layer) ---
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# --- Application source ---
+COPY . .
+
+# Finish composer (run scripts + optimized autoloader now that code exists)
+RUN php artisan key:generate --force \
+    && composer dump-autoload --optimize --no-dev \
+    && php artisan package:discover --ansi
+
+# Build frontend (triggers wayfinder:generate via the Vite plugin)
+RUN npm run build
+
+# Drop the build-time .env so it can never leak into the runtime image
+RUN rm -f .env
+
+#######################################################################
+# Stage 2 — Runtime: Nginx + PHP-FPM (serversideup)
+#######################################################################
+FROM serversideup/php:${PHP_VERSION}-fpm-nginx AS runtime
+
+# serversideup runs as the unprivileged www-data user by default.
+USER root
+WORKDIR /var/www/html
+
+# Copy the fully-built application (vendor + public/build included)
+COPY --from=build --chown=www-data:www-data /app /var/www/html
+
+# Make sure Laravel's writable dirs are owned by the runtime user
+RUN chown -R www-data:www-data storage bootstrap/cache \
+    && rm -rf /var/www/html/node_modules
+
+USER www-data
+
+# Laravel's built-in health endpoint — used by Coolify's health check
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
+    CMD curl -fsS http://127.0.0.1:8080/up || exit 1
