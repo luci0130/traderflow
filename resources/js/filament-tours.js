@@ -11,7 +11,12 @@
 // button) navigates to the next page. Progress is kept in sessionStorage so a
 // tour resumes seamlessly across Livewire SPA navigations.
 import { driver } from 'driver.js';
-import 'driver.js/dist/driver.css';
+// driver.js styles are imported from the Filament panel themes
+// (resources/css/filament/{admin,producer}/theme.css) instead of here:
+// Filament registers this file via Js::make(), which only loads the JS
+// bundle, so a CSS import here would be extracted into an orphan chunk
+// that never loads in production. The theme CSS is always loaded via
+// ->viteTheme(), so the tour popovers are styled in dev and prod alike.
 
 const config = () =>
     window.filamentData?.tutorials ?? {
