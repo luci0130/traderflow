@@ -146,4 +146,25 @@ class ReportsPagesTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Mere');
     }
+
+    /**
+     * The product report query is grouped by product_id. Filament otherwise
+     * appends an automatic tie-breaker sort on the qualified primary key
+     * (sales_order_items.id), which is an ungrouped column. SQLite tolerates
+     * it, but Postgres rejects it as a GROUP BY violation and returns a 500.
+     * Guard against the tie-breaker leaking back into the sorted query.
+     */
+    public function test_product_report_does_not_sort_by_ungrouped_primary_key(): void
+    {
+        $tenant = $this->actingAsTenantUser();
+        $this->createOrderWithItem($tenant, 'Mere');
+
+        $sql = Livewire::test(ProductProfitReport::class)
+            ->instance()
+            ->getFilteredSortedTableQuery()
+            ->toSql();
+
+        $this->assertStringContainsString('order by', strtolower($sql));
+        $this->assertStringNotContainsString('sales_order_items"."id', $sql);
+    }
 }

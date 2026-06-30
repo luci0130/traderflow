@@ -2,7 +2,6 @@
 
 namespace App\Modules\Reports\Filament\Pages;
 
-use App\Modules\Reports\Filament\Pages\SupermarketMarginReport;
 use App\Modules\SalesOrders\Models\SalesOrderItem;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -16,7 +15,6 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use UnitEnum;
 
 /**
  * Profit report grouped per product across all sold sales order items: how much
@@ -66,6 +64,12 @@ class ProductProfitReport extends Page implements HasTable
     {
         return $table
             ->query(fn (): Builder => $this->getQuery())
+            // The query is grouped by product_id, so Filament's automatic
+            // tie-breaker sort on the qualified primary key (sales_order_items.id)
+            // would reference an ungrouped column. SQLite tolerates this, but
+            // Postgres rejects it with a "must appear in the GROUP BY clause"
+            // error. Disable the key sort: profit_total already orders the rows.
+            ->defaultKeySort(false)
             ->columns([
                 TextColumn::make('product_name')
                     ->label(__('Product'))
