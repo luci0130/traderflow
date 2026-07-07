@@ -56,6 +56,11 @@ class StatusColors
         'delivered' => self::TEAL,
         'invoiced' => self::INDIGO,
         'paid' => self::EMERALD,
+        // Offer-line supplier fulfillment (sourcing board)
+        'pending' => self::GRAY,
+        'contacted' => self::BLUE,
+        'secured' => self::GREEN,
+        'declined' => self::RED,
         // Entity status
         'active' => self::GREEN,
         'inactive' => self::SLATE,

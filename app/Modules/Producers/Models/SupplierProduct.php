@@ -8,6 +8,7 @@ use App\Modules\MarketComparison\Models\SupplierProductCostOverride;
 use App\Modules\Products\Models\PackagingMethod;
 use App\Modules\SalesOrders\Models\SalesOrderItem;
 use App\Modules\Suppliers\Models\Supplier;
+use App\Support\CategoryImages;
 use App\Support\Countries;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -33,6 +34,18 @@ class SupplierProduct extends Model
             'unit_price' => 'decimal:4',
             'is_bio' => 'boolean',
         ];
+    }
+
+    /**
+     * The image path to display: the product's own picture, or its category's
+     * (matched by the free-text `category` name) as a fallback. Both live on the
+     * `public` disk.
+     */
+    protected function displayImagePath(): Attribute
+    {
+        return Attribute::get(fn (): ?string => filled($this->image_path)
+            ? $this->image_path
+            : app(CategoryImages::class)->pathFor($this->category));
     }
 
     public function producer(): BelongsTo

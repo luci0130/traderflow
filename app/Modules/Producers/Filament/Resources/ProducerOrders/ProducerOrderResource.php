@@ -78,8 +78,8 @@ class ProducerOrderResource extends Resource
                 TextColumn::make('salesOrder.order_date')->label(__('Date'))->date()->sortable(),
                 TextColumn::make('salesOrder.customer.name')->label(__('Customer'))->searchable(),
                 TextColumn::make('supplierProduct.name')->label(__('Product'))->searchable(),
-                TextColumn::make('quantity')->label(__('Quantity'))->numeric(decimalPlaces: 4),
-                TextColumn::make('sale_price')->label(__('Price'))->numeric(decimalPlaces: 4),
+                TextColumn::make('quantity')->label(__('Quantity'))->numeric(decimalPlaces: 2),
+                TextColumn::make('sale_price')->label(__('Price'))->numeric(decimalPlaces: 2),
                 TextColumn::make('salesOrder.currency')->label(__('Currency')),
                 TextColumn::make('salesOrder.status')->label(__('Status'))->badge()->color(fn (?string $state): array => StatusColors::badge($state)),
             ])

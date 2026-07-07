@@ -4,6 +4,7 @@ namespace App\Modules\Supermarkets\Models;
 
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Products\Models\PackagingMethod;
+use App\Support\CategoryImages;
 use App\Support\Countries;
 use Database\Factories\SupermarketProductFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -52,6 +53,18 @@ class SupermarketProduct extends Model
     protected function origin(): Attribute
     {
         return Attribute::set(fn (?string $value): ?string => Countries::normalize($value));
+    }
+
+    /**
+     * The image path to display: the product's own picture, or its category's
+     * (matched by the free-text `category` name) as a fallback. Both live on the
+     * `public` disk.
+     */
+    protected function displayImagePath(): Attribute
+    {
+        return Attribute::get(fn (): ?string => filled($this->image_path)
+            ? $this->image_path
+            : app(CategoryImages::class)->pathFor($this->category));
     }
 
     public function prices(): HasMany

@@ -85,6 +85,8 @@ class SupplierResource extends Resource
         return $schema
             ->components([
                 Section::make('Supplier')
+                    ->collapsible()
+                    ->collapsed()
                     ->schema([
                         Select::make('tenant_id')
                             ->label(__('Tenant scope'))
@@ -123,6 +125,8 @@ class SupplierResource extends Resource
                     ])
                     ->columns(2),
                 Section::make('Address and terms')
+                    ->collapsible()
+                    ->collapsed()
                     ->schema([
                         TextInput::make('country')->maxLength(255),
                         TextInput::make('city')->maxLength(255),
@@ -274,9 +278,9 @@ class SupplierResource extends Resource
     public static function getRelations(): array
     {
         return [
+            ProductsRelationManager::class,
             ContactsRelationManager::class,
             UsersRelationManager::class,
-            ProductsRelationManager::class,
             OrdersRelationManager::class,
             ReviewsRelationManager::class,
             DocumentsRelationManager::class,

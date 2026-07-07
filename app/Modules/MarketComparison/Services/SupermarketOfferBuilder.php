@@ -4,6 +4,7 @@ namespace App\Modules\MarketComparison\Services;
 
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItem;
+use App\Modules\CustomerOffers\Models\CustomerOfferItemSupplier;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
 use App\Modules\MarketComparison\Data\SupplierPriceCandidate;
@@ -11,8 +12,6 @@ use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Queries\SupermarketBestPriceQuery;
 use App\Modules\MarketComparison\Queries\SupplierBestPriceQuery;
 use App\Modules\Products\Models\Product;
-use App\Modules\SupplierOffers\Models\SupplierOffer;
-use App\Modules\SupplierOffers\Models\SupplierOfferItem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -22,10 +21,10 @@ use Illuminate\Support\Facades\DB;
  * the sell side either follows the best supermarket price or applies a margin
  * on top of the landed cost.
  *
- * Alongside the customer offer, one draft supplier offer is created per distinct
- * supplier among the selected products (a customer offer sourced from three
- * suppliers yields three supplier offers), and every customer offer item is
- * linked back to its originating supplier offer item.
+ * The customer offer is the single offer entity: each line carries its ordered
+ * list of prioritized suppliers (the buy/sourcing side) as
+ * {@see CustomerOfferItemSupplier} rows, which
+ * the purchasing agent later fills with landed cost and secured quantity.
  */
 class SupermarketOfferBuilder
 {
@@ -48,7 +47,7 @@ class SupermarketOfferBuilder
      *
      * @param  Collection<int, CanonicalProduct>  $canonicalProducts
      * @param  array<string, mixed>  $data
-     * @param  array<int, int>  $supplierOverrides  canonicalProductId => supplierProductId
+     * @param  array<int, list<int>>  $supplierPriorities  canonicalProductId => ordered supplierProductIds (priority #1 first)
      * @param  array<int, int>  $supermarketOverrides  canonicalProductId => supermarketPriceId
      * @param  array<int, float|int|string|null>  $quantities  canonicalProductId => offered quantity (defaults to the supplier's available quantity)
      * @param  array<int, float|int|string|null>  $margins  canonicalProductId => per-product margin value (defaults to the offer-level margin)
@@ -57,12 +56,12 @@ class SupermarketOfferBuilder
         Collection $canonicalProducts,
         array $data,
         ?int $tenantId,
-        array $supplierOverrides = [],
+        array $supplierPriorities = [],
         array $supermarketOverrides = [],
         array $quantities = [],
         array $margins = [],
     ): CustomerOffer {
-        return DB::transaction(function () use ($canonicalProducts, $data, $tenantId, $supplierOverrides, $supermarketOverrides, $quantities, $margins): CustomerOffer {
+        return DB::transaction(function () use ($canonicalProducts, $data, $tenantId, $supplierPriorities, $supermarketOverrides, $quantities, $margins): CustomerOffer {
             $customer = Customer::query()
                 ->visibleToTenant($tenantId)
                 ->findOrFail($data['customer_id']);
@@ -85,14 +84,13 @@ class SupermarketOfferBuilder
                 'total' => 0,
             ]);
 
-            /** @var array<int, SupplierOffer> $supplierOffers draft supplier offers keyed by supplier id */
-            $supplierOffers = [];
-
             foreach ($canonicalProducts as $canonicalProduct) {
-                $supplierCandidate = $this->resolveSupplierCandidate(
-                    $canonicalProduct,
-                    $supplierOverrides[$canonicalProduct->getKey()] ?? null,
-                );
+                $priorityList = $supplierPriorities[$canonicalProduct->getKey()] ?? [];
+                $orderedCandidates = $this->orderedSupplierCandidates($canonicalProduct, $priorityList);
+
+                // Priority #1 (or the cheapest fallback) is the buy source that
+                // seeds the offer line's purchase price and quantity.
+                $supplierCandidate = $orderedCandidates[0] ?? null;
 
                 if ($supplierCandidate === null) {
                     continue;
@@ -103,30 +101,26 @@ class SupermarketOfferBuilder
                     $supermarketOverrides[$canonicalProduct->getKey()] ?? null,
                 );
 
-                $quantity = $this->resolveQuantity($supplierCandidate, $quantities[$canonicalProduct->getKey()] ?? null);
+                // The quantity can be sourced across all prioritized suppliers, so
+                // it is clamped to their combined availability, not just #1's.
+                $quantity = $this->resolveQuantity(
+                    $quantities[$canonicalProduct->getKey()] ?? null,
+                    $this->combinedAvailability($orderedCandidates),
+                );
                 $product = $this->resolveTenantProduct($canonicalProduct, $tenantId);
 
-                $supplierOfferItem = $this->createSupplierOfferItem(
-                    $supplierOffers,
-                    $customerOffer,
-                    $supplierCandidate,
-                    $product,
-                    $quantity,
-                    $tenantId,
-                    $data,
-                );
-
-                $this->createItem(
+                $item = $this->createItem(
                     $customerOffer,
                     $supplierCandidate,
                     $supermarketCandidate,
                     $product,
-                    $supplierOfferItem,
                     $saleMode,
                     $this->resolveMargin($margins[$canonicalProduct->getKey()] ?? null, $marginInput),
                     $tenantId,
                     $quantity,
                 );
+
+                $this->attachSuppliers($item, $orderedCandidates);
             }
 
             return $customerOffer->refresh();
@@ -138,22 +132,21 @@ class SupermarketOfferBuilder
         SupplierPriceCandidate $supplierCandidate,
         ?SupermarketPriceCandidate $supermarketCandidate,
         Product $product,
-        SupplierOfferItem $supplierOfferItem,
         string $saleMode,
         float $marginInput,
         ?int $tenantId,
         ?float $quantity,
-    ): void {
+    ): CustomerOfferItem {
         $purchasePrice = $supplierCandidate->landedCost;
         $salePrice = $this->resolveSalePrice($supplierCandidate, $supermarketCandidate, $saleMode, $marginInput);
 
-        CustomerOfferItem::create([
+        return CustomerOfferItem::create([
             'tenant_id' => $tenantId,
             'customer_offer_id' => $customerOffer->getKey(),
             'product_id' => $product->getKey(),
             'supplier_id' => $supplierCandidate->supplierProduct->producer_id,
             'supplier_product_id' => $supplierCandidate->supplierProduct->getKey(),
-            'supplier_offer_item_id' => $supplierOfferItem->getKey(),
+            'supplier_offer_item_id' => null,
             'unit_id' => null,
             'quantity' => $quantity,
             'purchase_price' => $purchasePrice,
@@ -163,56 +156,34 @@ class SupermarketOfferBuilder
     }
 
     /**
-     * Creates the supplier offer item for a selected product, reusing (or
-     * lazily creating) a single draft supplier offer per supplier so that all
-     * products sourced from the same supplier land on one supplier offer.
+     * Attach the ordered supplier candidates to the offer line as its buy-side
+     * sourcing rows (priority 1..n). Landed cost and secured quantity are left
+     * blank for the purchasing agent to fill in later.
      *
-     * @param  array<int, SupplierOffer>  $supplierOffers  keyed by supplier id, mutated in place
-     * @param  array<string, mixed>  $data
+     * @param  list<SupplierPriceCandidate>  $candidates
      */
-    private function createSupplierOfferItem(
-        array &$supplierOffers,
-        CustomerOffer $customerOffer,
-        SupplierPriceCandidate $supplierCandidate,
-        Product $product,
-        ?float $quantity,
-        ?int $tenantId,
-        array $data,
-    ): SupplierOfferItem {
-        $supplierId = (int) $supplierCandidate->supplierProduct->producer_id;
-
-        $supplierOffer = $supplierOffers[$supplierId] ??= SupplierOffer::create([
-            'tenant_id' => $tenantId,
-            'supplier_id' => $supplierId,
-            'customer_offer_id' => $customerOffer->getKey(),
-            'received_at' => today(),
-            'valid_until' => $data['valid_until'] ?? null,
-            'currency' => $supplierCandidate->currency,
-            'status' => 'received',
-            'source_type' => 'manual',
-            'created_by' => auth()->id(),
-        ]);
-
-        return SupplierOfferItem::create([
-            'tenant_id' => $tenantId,
-            'supplier_offer_id' => $supplierOffer->getKey(),
-            'product_id' => $product->getKey(),
-            'unit_id' => null,
-            'quantity' => $quantity,
-            'purchase_price' => $supplierCandidate->unitPrice,
-            'currency' => $supplierCandidate->currency,
-        ]);
+    private function attachSuppliers(CustomerOfferItem $item, array $candidates): void
+    {
+        foreach ($candidates as $index => $candidate) {
+            $item->suppliers()->create([
+                'supplier_id' => $candidate->supplierProduct->producer_id,
+                'supplier_product_id' => $candidate->supplierProduct->getKey(),
+                'priority' => $index + 1,
+                'unit_price' => $candidate->unitPrice,
+                'currency' => $candidate->currency,
+                'quantity_available' => $candidate->quantityAvailable,
+                'status' => 'pending',
+            ]);
+        }
     }
 
     /**
      * The offered quantity for an item: the user-supplied value (clamped to the
-     * supplier's available quantity) when given, otherwise the full available
-     * quantity. A blank override falls back to the available quantity.
+     * suppliers' combined available quantity) when given, otherwise the full
+     * available quantity. A blank override falls back to that availability.
      */
-    private function resolveQuantity(SupplierPriceCandidate $supplierCandidate, float|int|string|null $override): ?float
+    private function resolveQuantity(float|int|string|null $override, ?float $available): ?float
     {
-        $available = $supplierCandidate->quantityAvailable;
-
         if ($override === null || $override === '') {
             return $available;
         }
@@ -224,6 +195,22 @@ class SupermarketOfferBuilder
         }
 
         return $quantity;
+    }
+
+    /**
+     * The combined available quantity across the given supplier candidates, or
+     * null when none of them report an availability (treated as uncapped).
+     *
+     * @param  list<SupplierPriceCandidate>  $candidates
+     */
+    private function combinedAvailability(array $candidates): ?float
+    {
+        $availabilities = array_values(array_filter(
+            array_map(fn (SupplierPriceCandidate $candidate): ?float => $candidate->quantityAvailable, $candidates),
+            fn (?float $value): bool => $value !== null,
+        ));
+
+        return $availabilities !== [] ? array_sum($availabilities) : null;
     }
 
     /**
@@ -241,24 +228,44 @@ class SupermarketOfferBuilder
     }
 
     /**
-     * Returns the pinned supplier candidate when the override id matches an
-     * active candidate, otherwise the cheapest supplier.
+     * The ordered supplier candidates for a product's prioritized list. Each
+     * id is resolved to its active candidate (dropping any that went inactive);
+     * an empty list falls back to the single cheapest supplier so a product
+     * always yields at least one supplier row.
+     *
+     * @param  list<int>  $priorityList
+     * @return list<SupplierPriceCandidate>
      */
-    private function resolveSupplierCandidate(CanonicalProduct $canonicalProduct, ?int $supplierProductId): ?SupplierPriceCandidate
+    private function orderedSupplierCandidates(CanonicalProduct $canonicalProduct, array $priorityList): array
     {
         $candidates = $this->supplierBestPriceQuery->candidatesFor($canonicalProduct);
 
-        if ($supplierProductId !== null) {
-            $pinned = $candidates->first(
+        if ($priorityList === []) {
+            $cheapest = $candidates->first();
+
+            return $cheapest !== null ? [$cheapest] : [];
+        }
+
+        $ordered = [];
+
+        foreach ($priorityList as $supplierProductId) {
+            $candidate = $candidates->first(
                 fn (SupplierPriceCandidate $candidate): bool => $candidate->supplierProduct->getKey() === $supplierProductId,
             );
 
-            if ($pinned !== null) {
-                return $pinned;
+            if ($candidate !== null) {
+                $ordered[] = $candidate;
             }
         }
 
-        return $candidates->first();
+        if ($ordered !== []) {
+            return $ordered;
+        }
+
+        // Every pinned id went inactive: fall back to the cheapest supplier.
+        $cheapest = $candidates->first();
+
+        return $cheapest !== null ? [$cheapest] : [];
     }
 
     /**

@@ -7,11 +7,14 @@ use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferRe
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Services\SupermarketOfferBuilder;
+use App\Modules\NumberSequences\Services\NumberSequenceGenerator;
 use Carbon\CarbonInterface;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Grid;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
@@ -88,15 +91,30 @@ trait CreatesCustomerOfferFromSelection
         $this->syncOfferQuantities($lines);
         $this->syncOfferMargins($lines);
 
+        // Margin editing has moved off this modal (set later on the offer), so the
+        // per-product margin column is no longer shown here.
         return view('filament.components.offer-selection', [
             'lines' => $lines,
             'margins' => $this->offerMargins,
             'saleMode' => $this->offerSaleMode,
-            'showMargin' => in_array($this->offerSaleMode, [
-                SupermarketOfferBuilder::SALE_FROM_PERCENTAGE,
-                SupermarketOfferBuilder::SALE_FROM_FIXED,
-            ], true),
+            'showMargin' => false,
         ]);
+    }
+
+    /**
+     * The next customer-offer number for the given tenant (defaults to the active
+     * tenant), previewed without consuming the sequence. Null when no tenant is
+     * resolved yet.
+     */
+    protected function previewOfferNumber(?int $tenantId = null): ?string
+    {
+        $tenantId ??= $this->getActiveTenantId();
+
+        if ($tenantId === null) {
+            return null;
+        }
+
+        return app(NumberSequenceGenerator::class)->preview($tenantId, 'customer_offer');
     }
 
     /**
@@ -148,81 +166,71 @@ trait CreatesCustomerOfferFromSelection
     /**
      * The offer creation form, shared by both pages.
      *
-     * @return array<int, DatePicker|Select|TextInput>
+     * @return array<int, Grid|Hidden>
      */
     protected function customerOfferFormSchema(): array
     {
         return [
-            Select::make('tenant_id')
-                ->label(__('Tenant'))
-                ->options(fn (): array => Tenant::query()
-                    ->where('is_active', true)
-                    ->orderBy('name')
-                    ->pluck('name', 'id')
-                    ->all())
-                ->default(fn (): ?int => $this->getActiveTenantId())
-                ->required()
-                ->searchable()
-                ->native(false),
-            Select::make('customer_id')
-                ->label(__('Customer'))
-                ->options(fn (): array => $this->offerCustomerOptions())
-                ->required()
-                ->searchable(),
-            TextInput::make('offer_number')
-                ->placeholder(__('Auto-generated'))
-                ->helperText(__('Leave blank to auto-generate from the tenant sequence; type a value to override.'))
-                ->rule($this->uniqueOfferNumberRule())
-                ->maxLength(255),
-            DatePicker::make('valid_until')
-                ->default(fn (): CarbonInterface => today()->addDays(7)),
-            Select::make('currency')
-                ->options(['EUR' => 'EUR', 'RON' => 'RON', 'USD' => 'USD', 'GBP' => 'GBP'])
-                ->default('RON'),
-            Select::make('sale_mode')
-                ->label(__('Sale price source'))
-                ->options([
-                    SupermarketOfferBuilder::SALE_FROM_SUPERMARKET => __('Best supermarket price'),
-                    SupermarketOfferBuilder::SALE_FROM_PERCENTAGE => __('Landed cost + percentage'),
-                    SupermarketOfferBuilder::SALE_FROM_FIXED => __('Landed cost + fixed amount'),
-                ])
-                ->default(SupermarketOfferBuilder::SALE_FROM_PERCENTAGE)
-                ->live()
-                ->afterStateUpdated(fn ($state) => $this->offerSaleMode = (string) $state)
-                ->required(),
-            TextInput::make('margin_value')
-                ->label(__('Margin value'))
-                ->helperText(__('Applied to every product; adjust individual products in the table below.'))
-                ->numeric()
-                ->default(0)
-                ->minValue(0)
-                ->live(onBlur: true)
-                // The offer-level margin is the bulk default: changing it updates every
-                // per-product margin that still matches the previous offer margin (i.e.
-                // hasn't been individually edited), so manual per-product edits survive.
-                ->afterStateUpdated(function ($state): void {
-                    $previous = $this->offerMarginValue;
-
-                    foreach ($this->offerMargins as $canonicalId => $value) {
-                        if ((string) $value === (string) $previous) {
-                            $this->offerMargins[$canonicalId] = $state;
-                        }
-                    }
-
-                    $this->offerMarginValue = $state;
-                })
-                ->visible(fn ($get): bool => in_array($get('sale_mode'), [
-                    SupermarketOfferBuilder::SALE_FROM_PERCENTAGE,
-                    SupermarketOfferBuilder::SALE_FROM_FIXED,
-                ], true)),
+            Grid::make(2)
+                ->schema([
+                    Select::make('tenant_id')
+                        ->label(__('Tenant'))
+                        ->options(fn (): array => Tenant::query()
+                            ->where('is_active', true)
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->default(fn (): ?int => $this->getActiveTenantId())
+                        ->required()
+                        ->searchable()
+                        ->native(false)
+                        // The offer number is per-tenant, so refresh its preview whenever the
+                        // tenant changes (and fill it once a tenant is picked, since a
+                        // super-admin starts with no active tenant).
+                        ->live()
+                        ->afterStateUpdated(function ($state, callable $set): void {
+                            $set('offer_number', filled($state) ? $this->previewOfferNumber((int) $state) : null);
+                        }),
+                    Select::make('customer_id')
+                        ->label(__('Customer'))
+                        ->options(fn (): array => $this->offerCustomerOptions())
+                        ->required()
+                        ->searchable(),
+                ]),
+            Grid::make(3)
+                ->schema([
+                    TextInput::make('offer_number')
+                        // Prefill with the next auto-generated number so the user can see
+                        // which id the offer will get. Left unchanged, it is treated as
+                        // auto (the sequence is consumed on create); edited, it overrides.
+                        ->default(fn (): ?string => $this->previewOfferNumber())
+                        ->helperText(__('Auto-generated; change it to override.'))
+                        ->rule($this->uniqueOfferNumberRule())
+                        ->maxLength(255),
+                    DatePicker::make('valid_until')
+                        ->default(fn (): CarbonInterface => today()->addDays(7)),
+                    Select::make('currency')
+                        ->options(['EUR' => 'EUR', 'RON' => 'RON', 'USD' => 'USD', 'GBP' => 'GBP'])
+                        ->default('RON'),
+                ]),
+            // Sale price source and margin are set later (on the offer itself), so
+            // they are hidden here but still submitted with their defaults so the
+            // builder can seed an initial sale price.
+            Hidden::make('sale_mode')
+                ->default(SupermarketOfferBuilder::SALE_FROM_PERCENTAGE),
+            Hidden::make('margin_value')
+                ->default(0),
         ];
     }
 
     /**
-     * Build a draft offer from a canonicalProductId => supplierProductId map and
-     * redirect to it. Returns false (after a warning) when nothing is selected.
+     * Build a draft offer from a selection and redirect to it. Returns false
+     * (after a warning) when nothing is selected. The selection is
+     * canonicalProductId => ordered supplierProductIds (priority #1 first);
+     * a scalar value (from pages that pick a single supplier) is accepted and
+     * normalized to a one-element list.
      *
-     * @param  array<int, int>  $selection
+     * @param  array<int, list<int>|int>  $selection
      * @param  array<string, mixed>  $data
      */
     protected function createCustomerOfferFromSelection(array $selection, array $data): bool
@@ -237,6 +245,21 @@ trait CreatesCustomerOfferFromSelection
             return false;
         }
 
+        // The offer-number field is prefilled with the previewed next number; if
+        // the user left it unchanged, blank it so the model auto-generates and
+        // actually consumes the sequence (otherwise the number is a manual override).
+        if (filled($data['offer_number'] ?? null)
+            && trim((string) $data['offer_number']) === $this->previewOfferNumber((int) $data['tenant_id'])) {
+            $data['offer_number'] = null;
+        }
+
+        // Accept both the prioritized-list shape (Market Comparison) and the
+        // single-supplier scalar shape (Best Prices — Suppliers page).
+        $supplierPriorities = array_map(
+            fn (array|int $value): array => is_array($value) ? array_values(array_map('intval', $value)) : [(int) $value],
+            $selection,
+        );
+
         $canonicalProducts = CanonicalProduct::query()
             ->whereKey(array_keys($selection))
             ->get();
@@ -245,7 +268,7 @@ trait CreatesCustomerOfferFromSelection
             $canonicalProducts,
             $data,
             (int) $data['tenant_id'],
-            supplierOverrides: array_map('intval', $selection),
+            supplierPriorities: $supplierPriorities,
             quantities: $this->offerQuantities,
             margins: $this->offerMargins,
         );

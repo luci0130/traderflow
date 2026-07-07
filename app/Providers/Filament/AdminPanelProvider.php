@@ -13,6 +13,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Js;
@@ -40,14 +41,15 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             ->navigationGroups([
                 __('Dashboard'),
-                __('Catalog'),
                 __('Entities'),
-                __('Sales'),
+                __('Catalog'),
                 __('Purchasing'),
+                __('Sales'),
                 __('Analytics'),
                 __('Reports'),
                 __('Supermarkets'),
-                __('Administration'),
+                NavigationGroup::make(__('Administration'))
+                    ->collapsed(),
             ])
             ->userMenuItems([
                 ...ActiveTenantMenuItems::filamentUserMenuItems(),
@@ -105,6 +107,7 @@ class AdminPanelProvider extends PanelProvider
                 FilamentShieldPlugin::make()
                     ->navigationGroup(__('Administration'))
                     ->navigationLabel(__('Roles'))
+                    ->navigationSort(80)
                     ->navigationIcon(Heroicon::OutlinedShieldCheck),
             ])
             ->authMiddleware([

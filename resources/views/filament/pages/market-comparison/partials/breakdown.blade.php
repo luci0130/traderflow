@@ -11,7 +11,7 @@
     <div class="fi-market-comparison-breakdown mt-2 grid gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 md:grid-cols-2 dark:border-white/10 dark:bg-white/5">
         <div>
             <p class="mb-2 text-xs font-medium uppercase tracking-wide text-success-600 dark:text-success-400">
-                {{ __('Supermarket prices (sell)') }}
+                {{ __('Supermarket prices') }}
             </p>
 
             @if (count($supermarkets) === 0)
@@ -43,7 +43,7 @@
 
         <div>
             <p class="mb-2 text-xs font-medium uppercase tracking-wide text-warning-600 dark:text-warning-400">
-                {{ __('Supplier prices (buy, landed cost)') }}
+                {{ __('Supplier prices') }}
             </p>
 
             @if (count($suppliers) === 0)
@@ -52,30 +52,39 @@
                 <table class="w-full text-sm">
                     <thead>
                         <tr class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            <th class="py-1 pr-3 font-medium">{{ __('Use') }}</th>
+                            <th class="py-1 pr-3 font-medium">{{ __('Priority') }}</th>
                             <th class="py-1 pr-3 font-medium">{{ __('Supplier') }}</th>
-                            <th class="py-1 pr-3 font-medium">{{ __('Country') }}</th>
-                            <th class="py-1 pr-3 font-medium">{{ __('Landed cost') }}</th>
+                            <th class="py-1 pr-3 font-medium">{{ __('City') }}</th>
+                            <th class="py-1 pr-3 font-medium">{{ __('Product price') }}</th>
                             <th class="py-1 pr-3 font-medium">{{ __('Available') }}</th>
                             <th class="py-1 pr-3 font-medium">{{ __('Valid until') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 dark:divide-white/10">
                         @foreach ($suppliers as $supplier)
-                            @php $isSelected = $this->isSupplierSelected($canonicalId, $supplier['id']); @endphp
-                            <tr @class(['bg-warning-50 dark:bg-warning-500/10' => $isSelected])>
+                            @php $priority = $this->supplierPriority($canonicalId, $supplier['id']); @endphp
+                            <tr @class(['bg-warning-50 dark:bg-warning-500/10' => $priority !== null])>
                                 <td class="py-1 pr-3">
-                                    <input
-                                        type="checkbox"
-                                        wire:click="selectSupplier({{ $canonicalId }}, {{ $supplier['id'] }})"
-                                        @checked($isSelected)
-                                        class="size-4 rounded border-gray-300 text-warning-600 focus:ring-warning-600 dark:border-white/20 dark:bg-white/10"
-                                    />
+                                    <button
+                                        type="button"
+                                        wire:click.stop="toggleSupplierPriority({{ $canonicalId }}, {{ $supplier['id'] }})"
+                                        @class([
+                                            'flex h-6 w-6 items-center justify-center rounded-md border text-xs font-semibold transition',
+                                            'border-warning-500 bg-warning-500 text-white shadow-sm' => $priority !== null,
+                                            'border-gray-300 bg-white hover:border-warning-400 dark:border-white/20 dark:bg-white/5' => $priority === null,
+                                        ])
+                                        title="{{ $priority !== null ? __('Priority :n — click to remove', ['n' => $priority]) : __('Add to the offer at the next priority') }}"
+                                    >
+                                        {{ $priority ?? '' }}
+                                    </button>
                                 </td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">{{ $supplier['name'] ?? '-' }}</td>
-                                <td class="py-1 pr-3 text-gray-500 dark:text-gray-400">{{ $supplier['country'] ?? '-' }}</td>
+                                @php
+                                    $supplierLocation = trim(($supplier['city'] ?? '').(($supplier['city'] && $supplier['country']) ? ', ' : '').($supplier['country'] ?? ''));
+                                @endphp
+                                <td class="py-1 pr-3 text-gray-500 dark:text-gray-400">{{ $supplierLocation !== '' ? $supplierLocation : '-' }}</td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
-                                    {{ number_format((float) $supplier['landed_cost'], 2) }} {{ $supplier['currency'] }}
+                                    {{ $supplier['unit_price'] !== null ? number_format((float) $supplier['unit_price'], 2).' '.$supplier['currency'] : '-' }}
                                 </td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
                                     {{ $supplier['quantity'] !== null ? number_format((float) $supplier['quantity'], 2) : '-' }}

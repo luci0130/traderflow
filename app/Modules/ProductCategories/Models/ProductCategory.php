@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Product categories are a single global taxonomy shared across all tenants
@@ -18,6 +19,15 @@ class ProductCategory extends Model
     use HasFactory;
 
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        static::deleted(function (ProductCategory $category): void {
+            if (filled($category->image_path)) {
+                Storage::disk('public')->delete($category->image_path);
+            }
+        });
+    }
 
     public function scopeVisibleToTenant(Builder $query, ?int $tenantId): Builder
     {

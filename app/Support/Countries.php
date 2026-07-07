@@ -167,6 +167,36 @@ class Countries
     }
 
     /**
+     * Render an ISO alpha-2 code as its regional-indicator flag emoji (e.g.
+     * "RO" → "🇷🇴"). Returns an empty string for unknown codes.
+     */
+    public static function flag(?string $code): string
+    {
+        if (! self::isValid($code)) {
+            return '';
+        }
+
+        $code = strtoupper($code);
+
+        return mb_chr(0x1F1E6 + (ord($code[0]) - ord('A')))
+            .mb_chr(0x1F1E6 + (ord($code[1]) - ord('A')));
+    }
+
+    /**
+     * URL to an SVG flag image for the country. Emoji flags don't render on
+     * Windows (they fall back to the letters), so the UI uses a real image.
+     * Returns null for unknown codes.
+     */
+    public static function flagUrl(?string $code): ?string
+    {
+        if (! self::isValid($code)) {
+            return null;
+        }
+
+        return 'https://flagcdn.com/'.strtolower($code).'.svg';
+    }
+
+    /**
      * Coerce any country input — an ISO code, an English label, or a localized
      * name — onto the canonical ISO alpha-2 code so every table stores the same
      * representation. Unknown values are returned trimmed but otherwise intact

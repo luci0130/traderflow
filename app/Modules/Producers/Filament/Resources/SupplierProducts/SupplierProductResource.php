@@ -425,7 +425,7 @@ class SupplierProductResource extends Resource
         return $table
             ->recordTitleAttribute('name')
             ->columns([
-                ImageColumn::make('image_path')
+                ImageColumn::make('display_image_path')
                     ->label(__('Photo'))
                     ->disk('public')
                     ->square()

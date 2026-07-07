@@ -21,7 +21,7 @@ class CustomerOfferConverter
         }
 
         return DB::transaction(function () use ($offer): SalesOrder {
-            $offer->loadMissing('items');
+            $offer->loadMissing('items.suppliers');
 
             $salesOrder = SalesOrder::create([
                 'tenant_id' => $offer->tenant_id,
@@ -37,7 +37,7 @@ class CustomerOfferConverter
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($offer->items as $item) {
+            foreach ($offer->items->filter(fn ($item): bool => $item->isIncludedInOrder()) as $item) {
                 SalesOrderItem::create([
                     'tenant_id' => $offer->tenant_id,
                     'sales_order_id' => $salesOrder->getKey(),

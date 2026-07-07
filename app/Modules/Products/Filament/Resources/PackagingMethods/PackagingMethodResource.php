@@ -27,7 +27,7 @@ class PackagingMethodResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Catalog';
+    protected static string|UnitEnum|null $navigationGroup = 'Administration';
 
     protected static ?int $navigationSort = 30;
 
@@ -45,7 +45,7 @@ class PackagingMethodResource extends Resource
 
     public static function getNavigationGroup(): ?string
     {
-        return __('Catalog');
+        return __('Administration');
     }
 
     public static function form(Schema $schema): Schema

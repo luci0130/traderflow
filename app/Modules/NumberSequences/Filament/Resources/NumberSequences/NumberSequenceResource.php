@@ -7,6 +7,7 @@ use App\Modules\NumberSequences\Filament\Resources\NumberSequences\Pages\EditNum
 use App\Modules\NumberSequences\Filament\Resources\NumberSequences\Pages\ListNumberSequences;
 use App\Modules\NumberSequences\Models\NumberSequence;
 use BackedEnum;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
@@ -27,7 +28,7 @@ class NumberSequenceResource extends Resource
 
     protected static string|UnitEnum|null $navigationGroup = 'Administration';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 60;
 
     public static function getModelLabel(): string
     {
@@ -110,7 +111,7 @@ class NumberSequenceResource extends Resource
                     ->color('success'),
             ])
             ->recordActions([
-                \Filament\Actions\EditAction::make(),
+                EditAction::make(),
             ])
             ->defaultSort('key');
     }

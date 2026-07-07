@@ -37,6 +37,22 @@ class NumberSequenceGenerator
     }
 
     /**
+     * The number that {@see self::next()} would hand out next, without reserving
+     * it. Used to preview a document number in a form before it is created.
+     */
+    public function preview(int $tenantId, string $key): string
+    {
+        $sequence = NumberSequence::query()
+            ->withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)
+            ->where('key', $key)
+            ->first()
+            ?? new NumberSequence(['tenant_id' => $tenantId, 'key' => $key] + $this->defaults($key));
+
+        return $sequence->format((int) $sequence->next_number);
+    }
+
+    /**
      * Make sure every configured sequence type exists for the tenant (used to
      * populate the settings list).
      */

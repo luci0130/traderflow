@@ -58,11 +58,23 @@ class CustomerOfferResource extends Resource
         return __('Sales');
     }
 
+    /**
+     * Whether the current user may see the sell side (sale price, margin, totals).
+     * Purchasing agents work the buy/sourcing side of the same offer, so those
+     * columns/fields are hidden from them.
+     */
+    public static function showsSellSide(): bool
+    {
+        return ! (auth()->user()?->isPurchasingAgent() ?? false);
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema
             ->components([
                 Section::make('Offer')
+                    ->collapsible()
+                    ->collapsed()
                     ->schema([
                         static::tenantSelect(),
                         Select::make('customer_id')
@@ -97,9 +109,11 @@ class CustomerOfferResource extends Resource
                             ])
                             ->default('draft')
                             ->required(),
-                        TextInput::make('subtotal')->numeric()->default(0),
-                        TextInput::make('tax_total')->numeric()->default(0),
-                        TextInput::make('total')->numeric()->default(0),
+                        // Sell-side totals are hidden from the purchasing role (it works
+                        // the buy/sourcing side of the same offer).
+                        TextInput::make('subtotal')->numeric()->default(0)->visible(fn (): bool => static::showsSellSide()),
+                        TextInput::make('tax_total')->numeric()->default(0)->visible(fn (): bool => static::showsSellSide()),
+                        TextInput::make('total')->numeric()->default(0)->visible(fn (): bool => static::showsSellSide()),
                         // Email subject/body are set in the "Send Offer Email" modal, not here.
                         Textarea::make('notes')->columnSpanFull(),
                     ])
@@ -120,7 +134,8 @@ class CustomerOfferResource extends Resource
                 TextColumn::make('status')->badge()->color(fn (?string $state): array => StatusColors::badge($state))->searchable()->sortable(),
                 TextColumn::make('total')
                     ->money(fn (CustomerOffer $record): string => $record->currency ?? 'EUR')
-                    ->sortable(),
+                    ->sortable()
+                    ->visible(fn (): bool => static::showsSellSide()),
                 TextColumn::make('sent_at')->dateTime()->sortable()->toggleable(),
             ])
             ->filters([

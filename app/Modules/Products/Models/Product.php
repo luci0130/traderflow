@@ -9,6 +9,7 @@ use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\SalesOrders\Models\SalesOrderItem;
 use App\Modules\SupplierOffers\Models\SupplierOfferItem;
 use App\Modules\Units\Models\Unit;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +29,29 @@ class Product extends Model
                 Storage::disk('public')->delete($product->image_path);
             }
         });
+    }
+
+    /**
+     * The image path to display for this product: its own picture, or the
+     * category's as a fallback when the product has none. Both live on the
+     * `public` disk. Loading the `category` relation avoids an N+1 query.
+     */
+    protected function displayImagePath(): Attribute
+    {
+        return Attribute::get(fn (): ?string => filled($this->image_path)
+            ? $this->image_path
+            : $this->category?->image_path);
+    }
+
+    /**
+     * Public URL for the display image (own or inherited from the category),
+     * or null when neither exists.
+     */
+    public function displayImageUrl(): ?string
+    {
+        return filled($this->display_image_path)
+            ? Storage::disk('public')->url($this->display_image_path)
+            : null;
     }
 
     public function tenant(): BelongsTo

@@ -2,109 +2,169 @@
 
 namespace App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\RelationManagers;
 
-use App\Modules\Products\Models\Product;
-use App\Modules\SupplierOffers\Models\SupplierOfferItem;
-use App\Modules\Suppliers\Models\Supplier;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\CreateAction;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
-use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
+use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
+use App\Modules\CustomerOffers\Models\CustomerOfferItemSupplier;
+use App\Modules\CustomerOffers\Services\CustomerOfferCalculator;
+use App\Modules\CustomerOffers\Services\RecalculateOfferItemSourcing;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Schema;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 
+/**
+ * The offer's "Items" tab, rendered as the sourcing board: each product line
+ * with its prioritized suppliers, grouped either by product or by supplier.
+ * The sales agent edits sale price / margin and picks which product→supplier
+ * rows go into the order; the purchasing agent fills landed cost and secured
+ * quantity. All edits save inline. Being a relation manager, the owner offer is
+ * reliably available on every Livewire request.
+ */
 class ItemsRelationManager extends RelationManager
 {
     protected static string $relationship = 'items';
 
-    public function form(Schema $schema): Schema
+    protected static ?string $title = 'Items';
+
+    protected string $view = 'filament.customer-offers.relation-managers.items-board';
+
+    // Render immediately (not lazily) so the inline inputs hydrate and fire
+    // their save requests on change.
+    protected static bool $isLazy = false;
+
+    public function editsSell(): bool
     {
-        return $schema
-            ->components([
-                Hidden::make('tenant_id')
-                    ->default(fn (): int => $this->getOwnerRecord()->tenant_id),
-                Select::make('product_id')
-                    ->label('Product')
-                    ->options(fn (): array => Product::query()->orderBy('name')->pluck('name', 'id')->all())
-                    ->required()
-                    ->searchable()
-                    // The sold product is fixed once the line exists; it can only be
-                    // chosen when manually adding a new line.
-                    ->disabledOn('edit'),
-                Select::make('supplier_id')
-                    ->label('Supplier')
-                    ->options(fn (): array => Supplier::query()
-                        ->visibleToTenant($this->getOwnerRecord()->tenant_id)
-                        ->orderBy('name')
-                        ->pluck('name', 'id')
-                        ->all())
-                    ->searchable(),
-                Select::make('supplier_offer_item_id')
-                    ->label('Supplier offer item')
-                    ->options(fn (): array => SupplierOfferItem::query()
-                        ->where('tenant_id', $this->getOwnerRecord()->tenant_id)
-                        ->with(['product', 'supplierOffer.supplier'])
-                        ->get()
-                        ->mapWithKeys(fn (SupplierOfferItem $item): array => [
-                            $item->id => "{$item->product?->name} - {$item->supplierOffer?->supplier?->name} ({$item->purchase_price} {$item->currency})",
-                        ])
-                        ->all())
-                    ->searchable(),
-                Select::make('supplier_product_id')
-                    ->label(__('Producer product'))
-                    ->relationship('supplierProduct', 'name')
-                    ->searchable()
-                    ->preload()
-                    // The buy source (supplier listing) is set when the line is created
-                    // and shouldn't be re-picked here.
-                    ->disabledOn('edit'),
-                TextInput::make('quantity')->numeric(),
-                TextInput::make('purchase_price')->numeric(),
-                TextInput::make('sale_price')->numeric()->required(),
-                TextInput::make('margin_value')->numeric(),
-                TextInput::make('margin_percent')->numeric(),
-                TextInput::make('tax_rate')->numeric()->default(0),
-                TextInput::make('line_total')->numeric()->default(0),
-                Textarea::make('notes')->columnSpanFull(),
-            ]);
+        return CustomerOfferResource::showsSellSide();
     }
 
-    public function table(Table $table): Table
+    public function editsSourcing(): bool
     {
-        // Customer offer items have no per-item currency; they follow the offer's
-        // currency, so format every money column with it instead of a fixed EUR.
-        $offerCurrency = $this->getOwnerRecord()->currency ?? 'EUR';
+        $user = auth()->user();
 
-        return $table
-            ->columns([
-                TextColumn::make('product.name')->searchable(),
-                TextColumn::make('supplier.name')->searchable(),
-                TextColumn::make('quantity')->numeric(),
-                TextColumn::make('purchase_price')->money($offerCurrency)->sortable(),
-                TextColumn::make('sale_price')->money($offerCurrency)->sortable(),
-                TextColumn::make('margin_percent')->numeric(),
-                TextColumn::make('line_total')->money($offerCurrency)->sortable(),
-            ])
-            ->headerActions([
-                CreateAction::make()
-                    ->mutateDataUsing(function (array $data): array {
-                        $data['tenant_id'] = $this->getOwnerRecord()->tenant_id;
+        return ($user?->isPurchasingAgent() ?? false) || ($user?->isSuperAdmin() ?? false);
+    }
 
-                        return $data;
-                    }),
+    /**
+     * Persist a buy-side cell (landed cost / secured qty) and roll it up onto its
+     * offer line's purchase price.
+     */
+    public function saveSourcing(int $rowId, string $field, mixed $value): void
+    {
+        if (! $this->editsSourcing() || ! in_array($field, ['landed_cost', 'secured_quantity'], true)) {
+            return;
+        }
+
+        $row = $this->resolveSupplierRow($rowId);
+
+        if ($row === null) {
+            return;
+        }
+
+        $row->update([$field => ($value === '' || $value === null) ? null : $value]);
+
+        app(RecalculateOfferItemSourcing::class)->sync($row->item->load('suppliers'));
+    }
+
+    /**
+     * Persist a sell-side cell. Editing the margin percent recomputes the sale
+     * price from the (landed) purchase price, keeping the calculator the single
+     * source of truth for the derived margin (and vice versa).
+     */
+    public function saveSale(int $itemId, string $field, mixed $value): void
+    {
+        if (! $this->editsSell() || ! in_array($field, ['sale_price', 'margin_percent'], true)) {
+            return;
+        }
+
+        $item = $this->getOwnerRecord()->items()->whereKey($itemId)->first();
+
+        if ($item === null) {
+            return;
+        }
+
+        if ($field === 'margin_percent') {
+            $purchase = (float) ($item->purchase_price ?? 0);
+            $salePrice = round($purchase * (1 + ((float) $value / 100)), 4);
+        } else {
+            $salePrice = ($value === '' || $value === null) ? null : $value;
+        }
+
+        $item->update(['sale_price' => $salePrice]);
+    }
+
+    /**
+     * Toggle whether a product→supplier row is kept in the order (seller only),
+     * then recompute the offer totals.
+     */
+    public function saveInclude(int $rowId, bool $value): void
+    {
+        if (! $this->editsSell()) {
+            return;
+        }
+
+        $row = $this->resolveSupplierRow($rowId);
+
+        if ($row === null) {
+            return;
+        }
+
+        $row->update(['include_in_order' => $value]);
+
+        // Including/excluding a supplier changes the line's average landed cost,
+        // so re-roll the purchase price, then the offer totals.
+        app(RecalculateOfferItemSourcing::class)->sync($row->item->load('suppliers'));
+        app(CustomerOfferCalculator::class)->recalculateOffer($this->getOwnerRecord());
+    }
+
+    /**
+     * The offer lines with their prioritized suppliers (Products view).
+     */
+    public function boardItems(): Collection
+    {
+        return $this->getOwnerRecord()->items()
+            ->with(['product.category', 'unit', 'suppliers.supplier', 'suppliers.supplierProduct'])
+            ->get();
+    }
+
+    /**
+     * The same supplier rows grouped by supplier (Suppliers view).
+     *
+     * @return Collection<int, array{supplier: mixed, rows: Collection}>
+     */
+    public function supplierGroups(): Collection
+    {
+        return $this->supplierRows()
+            ->groupBy('supplier_id')
+            ->map(fn (Collection $rows): array => [
+                'supplier' => $rows->first()->supplier,
+                'rows' => $rows,
             ])
-            ->recordActions([
-                EditAction::make(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
-            ]);
+            ->values();
+    }
+
+    /**
+     * Every supplier row on the offer, keeping its parent line so the Suppliers
+     * view can show the product.
+     *
+     * @return Collection<int, CustomerOfferItemSupplier>
+     */
+    protected function supplierRows(): Collection
+    {
+        return $this->boardItems()->flatMap(fn ($item) => $item->suppliers->map(function ($supplier) use ($item) {
+            $supplier->setRelation('item', $item);
+
+            return $supplier;
+        }));
+    }
+
+    /**
+     * Load a supplier row and confirm it belongs to this offer.
+     */
+    protected function resolveSupplierRow(int $id): ?CustomerOfferItemSupplier
+    {
+        $row = CustomerOfferItemSupplier::query()->with('item')->find($id);
+
+        if ($row === null || $row->item?->customer_offer_id !== $this->getOwnerRecord()->getKey()) {
+            return null;
+        }
+
+        return $row;
     }
 }

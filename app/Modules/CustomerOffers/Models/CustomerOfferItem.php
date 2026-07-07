@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[ObservedBy(CustomerOfferItemObserver::class)]
 class CustomerOfferItem extends Model
@@ -73,5 +74,24 @@ class CustomerOfferItem extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    /**
+     * The prioritized suppliers to source this line from (buy side).
+     */
+    public function suppliers(): HasMany
+    {
+        return $this->hasMany(CustomerOfferItemSupplier::class)->orderBy('priority');
+    }
+
+    /**
+     * A line enters the order when it has no suppliers yet, or at least one of
+     * its suppliers is kept in the order (inclusion is chosen per supplier).
+     */
+    public function isIncludedInOrder(): bool
+    {
+        $suppliers = $this->relationLoaded('suppliers') ? $this->suppliers : $this->suppliers()->get();
+
+        return $suppliers->isEmpty() || $suppliers->contains(fn (CustomerOfferItemSupplier $supplier): bool => (bool) $supplier->include_in_order);
     }
 }

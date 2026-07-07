@@ -4,24 +4,29 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use App\Models\User;
+use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
+use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\Pages\EditCustomerOffer;
+use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\RelationManagers\SupplierOffersRelationManager;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Filament\Pages\MarketComparison;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Models\SupplierCostDefault;
-use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\MarketComparison\Services\MarketComparisonRowAssembler;
 use App\Modules\MarketComparison\Services\SupermarketOfferBuilder;
 use App\Modules\Producers\Models\SupplierProduct;
+use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Products\Models\Product;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
+use App\Modules\SupplierOffers\Models\SupplierOffer;
 use App\Modules\Suppliers\Models\Supplier;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class MarketComparisonPageTest extends TestCase
@@ -180,7 +185,7 @@ class MarketComparisonPageTest extends TestCase
         $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
 
         $page = app(MarketComparison::class);
-        $page->selectSupplier($canonical->id, $page->bestSupplierProductId($canonical));
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
 
         // Rendering the modal footer seeds the default quantity (max available).
         (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
@@ -192,7 +197,7 @@ class MarketComparisonPageTest extends TestCase
         $this->assertSame(25, $page->offerQuantities[$canonical->id]);
 
         // Deselecting the product drops its quantity entry.
-        $page->selectSupplier($canonical->id, $page->bestSupplierProductId($canonical));
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
         (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
         $this->assertArrayNotHasKey($canonical->id, $page->offerQuantities);
     }
@@ -226,71 +231,52 @@ class MarketComparisonPageTest extends TestCase
         $this->assertSame('30.0000', $item->quantity);
     }
 
-    public function test_builder_creates_one_supplier_offer_per_supplier_and_links_the_items(): void
+    public function test_builder_attaches_prioritized_suppliers_to_the_offer_line_and_creates_no_supplier_offer(): void
     {
         $tenant = Tenant::create(['name' => 'Tenant A']);
         session(['tenant_id' => $tenant->id]);
         $this->actingAs(User::factory()->create());
 
-        // Two products from the same supplier, one from a second supplier.
         $supplierOne = Supplier::create(['name' => 'Ferma Unu SRL']);
         $supplierTwo = Supplier::create(['name' => 'Ferma Doi SRL']);
 
         $apple = CanonicalProduct::factory()->create(['name' => 'Mere']);
-        $pear = CanonicalProduct::factory()->create(['name' => 'Pere']);
-        $plum = CanonicalProduct::factory()->create(['name' => 'Prune']);
-
-        $appleProduct = SupplierProduct::create([
-            'producer_id' => $supplierOne->id, 'name' => 'Mere', 'status' => 'active',
+        $appleFromOne = SupplierProduct::create([
+            'producer_id' => $supplierOne->id, 'name' => 'Mere unu', 'status' => 'active',
             'unit_price' => 4.0, 'currency' => 'RON', 'quantity_available' => 100,
         ]);
-        $pearProduct = SupplierProduct::create([
-            'producer_id' => $supplierOne->id, 'name' => 'Pere', 'status' => 'active',
-            'unit_price' => 5.0, 'currency' => 'RON', 'quantity_available' => 120,
-        ]);
-        $plumProduct = SupplierProduct::create([
-            'producer_id' => $supplierTwo->id, 'name' => 'Prune', 'status' => 'active',
+        $appleFromTwo = SupplierProduct::create([
+            'producer_id' => $supplierTwo->id, 'name' => 'Mere doi', 'status' => 'active',
             'unit_price' => 6.0, 'currency' => 'RON', 'quantity_available' => 80,
         ]);
-        $apple->supplierProducts()->attach($appleProduct);
-        $pear->supplierProducts()->attach($pearProduct);
-        $plum->supplierProducts()->attach($plumProduct);
+        $apple->supplierProducts()->attach($appleFromOne);
+        $apple->supplierProducts()->attach($appleFromTwo);
 
         $supermarket = Customer::create(['name' => 'Auchan', 'tenant_id' => null]);
 
         $offer = app(SupermarketOfferBuilder::class)->build(
-            new EloquentCollection([$apple, $pear, $plum]),
+            new EloquentCollection([$apple]),
             ['customer_id' => $supermarket->id, 'currency' => 'RON', 'sale_mode' => SupermarketOfferBuilder::SALE_FROM_FIXED, 'margin_value' => 1],
             $tenant->id,
-            quantities: [$apple->id => 30],
+            // Prioritize supplier two first, then supplier one.
+            supplierPriorities: [$apple->id => [$appleFromTwo->id, $appleFromOne->id]],
         );
 
-        // Three products from two suppliers => exactly two supplier offers.
-        $supplierOffers = \App\Modules\SupplierOffers\Models\SupplierOffer::query()->get();
-        $this->assertCount(2, $supplierOffers);
-        $this->assertEqualsCanonicalizing(
-            [$supplierOne->id, $supplierTwo->id],
-            $supplierOffers->pluck('supplier_id')->all(),
-        );
+        // The offer is the single entity: sourcing lives on its line, no separate
+        // supplier offer is generated.
+        $this->assertSame(0, SupplierOffer::count());
 
-        // Every supplier offer is attached to the customer offer.
-        $this->assertTrue($supplierOffers->every(fn ($supplierOffer): bool => $supplierOffer->customer_offer_id === $offer->id));
-        $this->assertCount(2, $offer->supplierOffers);
+        $item = $offer->items->firstWhere('product.name', 'Mere');
+        $this->assertNull($item->supplier_offer_item_id);
 
-        // Supplier one's offer groups both of its products.
-        $offerOne = $supplierOffers->firstWhere('supplier_id', $supplierOne->id);
-        $this->assertCount(2, $offerOne->items);
-        $this->assertSame('received', $offerOne->status);
-
-        // Every customer offer item is linked back to a supplier offer item, and
-        // the supplier offer item carries the same (edited) quantity and the raw
-        // supplier unit price.
-        $appleItem = $offer->items->firstWhere('product.name', 'Mere');
-        $this->assertNotNull($appleItem->supplier_offer_item_id);
-        $supplierItem = $appleItem->supplierOfferItem;
-        $this->assertSame('30.0000', $supplierItem->quantity);
-        $this->assertSame('4.0000', $supplierItem->purchase_price);
-        $this->assertSame($supplierOne->id, $supplierItem->supplierOffer->supplier_id);
+        $suppliers = $item->suppliers()->get();
+        $this->assertCount(2, $suppliers);
+        $this->assertSame($appleFromTwo->id, $suppliers[0]->supplier_product_id);
+        $this->assertSame(1, $suppliers[0]->priority);
+        $this->assertSame('6.0000', $suppliers[0]->unit_price);
+        $this->assertSame($appleFromOne->id, $suppliers[1]->supplier_product_id);
+        $this->assertSame(2, $suppliers[1]->priority);
+        $this->assertSame('pending', $suppliers[0]->status);
     }
 
     public function test_create_offer_modal_leaves_offer_number_blank_for_auto_generation(): void
@@ -307,9 +293,10 @@ class MarketComparisonPageTest extends TestCase
         Livewire::test(MarketComparison::class)
             ->call('toggleProductSelection', $canonical->id, SupplierProduct::query()->value('id'))
             ->mountAction('createSupermarketOffer')
-            // The number is left blank so the tenant sequence fills it on save.
+            // The number field is prefilled with the previewed next sequence value
+            // so the user can see which id the offer will get.
             ->assertActionDataSet([
-                'offer_number' => null,
+                'offer_number' => 'OC-00001',
                 'valid_until' => today()->addDays(7)->toDateString(),
                 'currency' => 'RON',
                 'sale_mode' => SupermarketOfferBuilder::SALE_FROM_PERCENTAGE,
@@ -392,8 +379,8 @@ class MarketComparisonPageTest extends TestCase
     public function test_customer_offer_resource_registers_the_supplier_offers_relation(): void
     {
         $this->assertContains(
-            \App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\RelationManagers\SupplierOffersRelationManager::class,
-            \App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource::getRelations(),
+            SupplierOffersRelationManager::class,
+            CustomerOfferResource::getRelations(),
         );
     }
 
@@ -417,50 +404,52 @@ class MarketComparisonPageTest extends TestCase
             'status' => 'draft', 'offer_date' => today(), 'subtotal' => 0, 'tax_total' => 0, 'total' => 0,
         ]);
 
-        $attached = \App\Modules\SupplierOffers\Models\SupplierOffer::create([
+        $attached = SupplierOffer::create([
             'tenant_id' => $tenant->id, 'supplier_id' => $supplier->id, 'customer_offer_id' => $offer->id,
             'currency' => 'RON', 'status' => 'received', 'source_type' => 'manual', 'received_at' => today(),
         ]);
-        $unrelated = \App\Modules\SupplierOffers\Models\SupplierOffer::create([
+        $unrelated = SupplierOffer::create([
             'tenant_id' => $tenant->id, 'supplier_id' => $supplier->id, 'customer_offer_id' => $otherOffer->id,
             'currency' => 'RON', 'status' => 'received', 'source_type' => 'manual', 'received_at' => today(),
         ]);
 
-        Livewire::test(\App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\RelationManagers\SupplierOffersRelationManager::class, [
+        Livewire::test(SupplierOffersRelationManager::class, [
             'ownerRecord' => $offer,
-            'pageClass' => \App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\Pages\EditCustomerOffer::class,
+            'pageClass' => EditCustomerOffer::class,
         ])
             ->assertSuccessful()
             ->assertCanSeeTableRecords([$attached])
             ->assertCanNotSeeTableRecords([$unrelated]);
     }
 
-    public function test_modal_renders_a_sale_price_computed_from_the_per_product_margin(): void
+    public function test_modal_shows_average_price_and_max_quantity_without_a_margin_column(): void
     {
         $tenant = Tenant::create(['name' => 'Tenant A']);
         session(['tenant_id' => $tenant->id]);
         $this->actingAs(User::factory()->create());
 
-        $canonical = $this->canonicalWithPrices(supplierLanded: 10.0, supermarketGross: 20.0);
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $a = $this->attachSupplierProduct($canonical, 'A SRL', 4.0);   // qty 100
+        $b = $this->attachSupplierProduct($canonical, 'B SRL', 6.0);   // qty 100
 
         $page = app(MarketComparison::class);
-        $page->offerSaleMode = SupermarketOfferBuilder::SALE_FROM_PERCENTAGE;
-        $page->selectSupplier($canonical->id, $page->bestSupplierProductId($canonical));
-        $page->offerMargins = [$canonical->id => 25];
+        $page->toggleSupplierPriority($canonical->id, $a->id);
+        $page->toggleSupplierPriority($canonical->id, $b->id);
 
         $html = (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page)->render();
 
-        // 10 landed + 25% = 12.50, shown as the sale price under the margin input.
-        $this->assertStringContainsString('Sale price', $html);
-        $this->assertStringContainsString('12.50', $html);
+        // Average product price (5.00) and the combined-availability max (200.00).
+        $this->assertStringContainsString('Average product price', $html);
+        $this->assertStringContainsString('5.00', $html);
+        $this->assertStringContainsString('Max 200.00', $html);
 
-        // The margin input is live so the sale price recomputes as the user types.
-        $this->assertStringContainsString('wire:model.live.debounce.400ms="offerMargins.'.$canonical->id.'"', $html);
+        // The expandable supplier list shows each supplier's priority.
+        $this->assertStringContainsString('A SRL', $html);
+        $this->assertStringContainsString('B SRL', $html);
 
-        // Fixed-amount mode adds the margin to the landed cost instead: 10 + 25 = 35.00.
-        $page->offerSaleMode = SupermarketOfferBuilder::SALE_FROM_FIXED;
-        $fixedHtml = (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page)->render();
-        $this->assertStringContainsString('35.00', $fixedHtml);
+        // Margin editing was moved off this modal: no margin column / sale price.
+        $this->assertStringNotContainsString('Sale price', $html);
+        $this->assertStringNotContainsString('offerMargins', $html);
     }
 
     public function test_builder_uses_per_product_margin_over_the_offer_level_margin(): void
@@ -520,7 +509,7 @@ class MarketComparisonPageTest extends TestCase
 
         $page = app(MarketComparison::class);
         $page->offerMarginValue = 15;
-        $page->selectSupplier($canonical->id, $page->bestSupplierProductId($canonical));
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
 
         // Rendering the footer seeds the per-product margin from the offer margin.
         (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
@@ -532,7 +521,7 @@ class MarketComparisonPageTest extends TestCase
         $this->assertSame(40, $page->offerMargins[$canonical->id]);
 
         // Deselecting the product drops its margin entry.
-        $page->selectSupplier($canonical->id, $page->bestSupplierProductId($canonical));
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
         (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
         $this->assertArrayNotHasKey($canonical->id, $page->offerMargins);
     }
@@ -606,7 +595,7 @@ class MarketComparisonPageTest extends TestCase
                 'margin_value' => 1,
             ],
             $tenant->id,
-            supplierOverrides: [$canonical->id => $preferredProduct->id],
+            supplierPriorities: [$canonical->id => [$preferredProduct->id]],
         );
 
         $item = $offer->items->first();
@@ -732,13 +721,14 @@ class MarketComparisonPageTest extends TestCase
 
         $this->assertSame('Portocale', $lines[0]['product']);
         $this->assertSame('Spain', $lines[0]['country']);
-        $this->assertSame('Ferma Verde SRL', $lines[0]['supplier']);
-        $this->assertSame(6.0, $lines[0]['landed_cost']);
+        $this->assertSame('Ferma Verde SRL', $lines[0]['suppliers'][0]['name']);
+        // The modal shows the average supplier product price (unit price), not landed cost.
+        $this->assertSame(5.0, $lines[0]['avg_price']);
         $this->assertTrue($lines[0]['has_supplier']);
 
         $this->assertSame('Lămâi', $lines[1]['product']);
         $this->assertFalse($lines[1]['has_supplier']);
-        $this->assertNull($lines[1]['supplier']);
+        $this->assertSame([], $lines[1]['suppliers']);
     }
 
     public function test_pinned_supplier_overrides_the_cheapest_in_the_offer_preview(): void
@@ -768,16 +758,16 @@ class MarketComparisonPageTest extends TestCase
 
         // Default: cheapest supplier.
         $default = $linesMethod->invoke($page, new EloquentCollection([$canonical]));
-        $this->assertSame('Cheap SRL', $default[0]['supplier']);
+        $this->assertSame('Cheap SRL', $default[0]['suppliers'][0]['name']);
 
-        // After pinning the pricier supplier, the preview follows the pin.
-        $page->selectSupplier($canonical->id, $preferredProduct->id);
+        // After pinning the pricier supplier, the preview follows the pin (priority #1).
+        $page->toggleSupplierPriority($canonical->id, $preferredProduct->id);
         $pinned = $linesMethod->invoke($page, new EloquentCollection([$canonical]));
-        $this->assertSame('Preferred SRL', $pinned[0]['supplier']);
-        $this->assertSame(5.0, $pinned[0]['landed_cost']);
+        $this->assertSame('Preferred SRL', $pinned[0]['suppliers'][0]['name']);
+        $this->assertSame(5.0, $pinned[0]['avg_price']);
 
         // Toggling the same supplier off falls back to the cheapest.
-        $page->selectSupplier($canonical->id, $preferredProduct->id);
+        $page->toggleSupplierPriority($canonical->id, $preferredProduct->id);
         $this->assertArrayNotHasKey($canonical->id, $page->selectedSupplierProductIds);
     }
 
@@ -809,7 +799,7 @@ class MarketComparisonPageTest extends TestCase
         $this->assertFalse($page->isProductSelected($canonical->id));
 
         // Picking a supplier from the breakdown selects the parent product too.
-        $page->selectSupplier($canonical->id, $preferredProduct->id);
+        $page->toggleSupplierPriority($canonical->id, $preferredProduct->id);
         $this->assertTrue($page->isProductSelected($canonical->id));
         $this->assertTrue($page->isSupplierSelected($canonical->id, $preferredProduct->id));
         $this->assertFalse($page->isSupplierSelected($canonical->id, $cheapProduct->id));
@@ -851,7 +841,7 @@ class MarketComparisonPageTest extends TestCase
         $canonical->supplierProducts()->attach($preferredProduct);
 
         $component = Livewire::test(MarketComparison::class)
-            ->call('selectSupplier', $canonical->id, $preferredProduct->id);
+            ->call('toggleSupplierPriority', $canonical->id, $preferredProduct->id);
 
         // The popup preview reads from the live component state: it must show the
         // picked supplier, not the cheapest.
@@ -859,7 +849,7 @@ class MarketComparisonPageTest extends TestCase
         $linesMethod = new \ReflectionMethod($page, 'offerSelectionLines');
         $selectedMethod = new \ReflectionMethod($page, 'selectedCanonicalProducts');
         $lines = $linesMethod->invoke($page, $selectedMethod->invoke($page));
-        $this->assertSame('Preferred SRL', $lines[0]['supplier']);
+        $this->assertSame('Preferred SRL', $lines[0]['suppliers'][0]['name']);
 
         // The main-row "Best supplier (buy)" badge also follows the pin.
         $formatSupplier = new \ReflectionMethod($page, 'formatSupplier');
@@ -901,6 +891,219 @@ class MarketComparisonPageTest extends TestCase
             ->assertCanSeeTableRecords([$cherry, $banana, $apple], inOrder: true)
             ->sortTable('category.name')
             ->assertCanSeeTableRecords([$apple, $banana, $cherry], inOrder: true);
+    }
+
+    public function test_toggle_supplier_priority_tracks_click_order_and_reindexes(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        session(['tenant_id' => $tenant->id]);
+        $this->actingAs(User::factory()->create());
+
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $a = $this->attachSupplierProduct($canonical, 'A SRL', 3.0);
+        $b = $this->attachSupplierProduct($canonical, 'B SRL', 4.0);
+        $c = $this->attachSupplierProduct($canonical, 'C SRL', 5.0);
+
+        $page = app(MarketComparison::class);
+        $page->toggleSupplierPriority($canonical->id, $a->id);
+        $page->toggleSupplierPriority($canonical->id, $b->id);
+        $page->toggleSupplierPriority($canonical->id, $c->id);
+
+        // Clicking suppliers appends them in click order (priority = position).
+        $this->assertSame([$a->id, $b->id, $c->id], $page->selectedSupplierProductIds[$canonical->id]);
+        $this->assertSame(1, $page->supplierPriority($canonical->id, $a->id));
+        $this->assertSame(2, $page->supplierPriority($canonical->id, $b->id));
+        $this->assertSame(3, $page->supplierPriority($canonical->id, $c->id));
+
+        // Re-clicking the middle supplier removes it and renumbers the rest.
+        $page->toggleSupplierPriority($canonical->id, $b->id);
+        $this->assertSame([$a->id, $c->id], $page->selectedSupplierProductIds[$canonical->id]);
+        $this->assertNull($page->supplierPriority($canonical->id, $b->id));
+        $this->assertSame(2, $page->supplierPriority($canonical->id, $c->id));
+
+        // Removing every supplier drops the product from the offer entirely.
+        $page->toggleSupplierPriority($canonical->id, $a->id);
+        $page->toggleSupplierPriority($canonical->id, $c->id);
+        $this->assertFalse($page->isProductSelected($canonical->id));
+        $this->assertArrayNotHasKey($canonical->id, $page->selectedSupplierProductIds);
+    }
+
+    public function test_supplier_priority_is_capped_per_product(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        session(['tenant_id' => $tenant->id]);
+        $this->actingAs(User::factory()->create());
+
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $products = [];
+        for ($i = 0; $i < 6; $i++) {
+            $products[] = $this->attachSupplierProduct($canonical, "S{$i} SRL", 3.0 + $i);
+        }
+
+        $page = app(MarketComparison::class);
+        foreach ($products as $product) {
+            $page->toggleSupplierPriority($canonical->id, $product->id);
+        }
+
+        // The 6th click is a no-op: only the first 5 are prioritized.
+        $this->assertCount(MarketComparison::MAX_SUPPLIERS_PER_PRODUCT, $page->selectedSupplierProductIds[$canonical->id]);
+        $this->assertNull($page->supplierPriority($canonical->id, $products[5]->id));
+    }
+
+    public function test_create_offer_attaches_prioritized_suppliers_to_the_offer_line(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+
+        $supermarket = Customer::create(['name' => 'Auchan', 'tenant_id' => null]);
+
+        $this->actingAs($user);
+        setPermissionsTeamId($tenant->getKey());
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+
+        // One canonical with a cheapest supplier (landed 6.0) plus a cheaper
+        // second supplier (landed 5.5) so both appear as active candidates.
+        $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
+        $firstId = (int) SupplierProduct::query()->where('name', 'Portocale Navel')->value('id');
+        $second = $this->attachSupplierProduct($canonical, 'Second SRL', 5.5);
+
+        $component = Livewire::test(MarketComparison::class)
+            ->call('toggleSupplierPriority', $canonical->id, $second->id)  // priority 1 (buy source)
+            ->call('toggleSupplierPriority', $canonical->id, $firstId);    // priority 2
+
+        $component->callAction('createSupermarketOffer', data: [
+            'customer_id' => $supermarket->id,
+            'currency' => 'RON',
+            'sale_mode' => SupermarketOfferBuilder::SALE_FROM_SUPERMARKET,
+        ])->assertHasNoActionErrors();
+
+        $offer = CustomerOffer::query()->latest('id')->first();
+        $this->assertNotNull($offer);
+
+        $item = $offer->items()->with('suppliers')->first();
+        $this->assertNotNull($item);
+
+        $suppliers = $item->suppliers;
+        $this->assertCount(2, $suppliers);
+        $this->assertSame($second->id, $suppliers[0]->supplier_product_id);
+        $this->assertSame(1, $suppliers[0]->priority);
+        $this->assertSame($firstId, $suppliers[1]->supplier_product_id);
+        $this->assertSame(2, $suppliers[1]->priority);
+        $this->assertSame('pending', $suppliers[0]->status);
+
+        // The offer is the single entity: no separate supplier offer is generated.
+        $this->assertSame(0, SupplierOffer::count());
+    }
+
+    public function test_offer_selection_line_averages_prices_and_sums_available_quantities(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        session(['tenant_id' => $tenant->id]);
+        $this->actingAs(User::factory()->create());
+
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $a = $this->attachSupplierProduct($canonical, 'A SRL', 4.0);   // qty 100
+        $b = $this->attachSupplierProduct($canonical, 'B SRL', 6.0);   // qty 100
+
+        $page = app(MarketComparison::class);
+        $page->toggleSupplierPriority($canonical->id, $a->id);
+        $page->toggleSupplierPriority($canonical->id, $b->id);
+
+        $lines = (new \ReflectionMethod($page, 'offerSelectionLines'))
+            ->invoke($page, new EloquentCollection([$canonical]));
+
+        // Average of the chosen suppliers' product prices (not landed cost).
+        $this->assertSame(5.0, $lines[0]['avg_price']);
+        // Max editable quantity = the suppliers' combined availability.
+        $this->assertSame(200.0, $lines[0]['quantity_available']);
+
+        $suppliers = $lines[0]['suppliers'];
+        $this->assertCount(2, $suppliers);
+        $this->assertSame(1, $suppliers[0]['priority']);
+        $this->assertSame('A SRL', $suppliers[0]['name']);
+        $this->assertSame(2, $suppliers[1]['priority']);
+        $this->assertSame('B SRL', $suppliers[1]['name']);
+    }
+
+    public function test_offer_number_fills_from_the_tenant_picked_in_the_modal(): void
+    {
+        // A super-admin has no default tenant, so the number is blank until a
+        // tenant is chosen in the modal, then it fills with that tenant's next number.
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        setPermissionsTeamId(null);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web', 'tenant_id' => null]);
+        $user->assignRole('super_admin');
+        $this->actingAs($user);
+
+        Customer::create(['name' => 'Auchan', 'tenant_id' => null]);
+        $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
+
+        Livewire::test(MarketComparison::class)
+            ->call('toggleSupplierPriority', $canonical->id, (int) SupplierProduct::query()->value('id'))
+            ->mountAction('createSupermarketOffer')
+            ->assertActionDataSet(['offer_number' => null, 'tenant_id' => null])
+            ->setActionData(['tenant_id' => $tenant->id])
+            ->assertActionDataSet(['offer_number' => 'OC-00001']);
+    }
+
+    public function test_prefilled_offer_number_does_not_double_consume_the_sequence(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+        $supermarket = Customer::create(['name' => 'Auchan', 'tenant_id' => null]);
+
+        $this->actingAs($user);
+        setPermissionsTeamId($tenant->getKey());
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+
+        $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
+        $supplierProductId = (int) SupplierProduct::query()->value('id');
+
+        // Submitting with the prefilled preview number consumes the sequence once.
+        Livewire::test(MarketComparison::class)
+            ->call('toggleSupplierPriority', $canonical->id, $supplierProductId)
+            ->callAction('createSupermarketOffer', data: [
+                'customer_id' => $supermarket->id,
+                'offer_number' => 'OC-00001',
+                'currency' => 'RON',
+                'sale_mode' => SupermarketOfferBuilder::SALE_FROM_SUPERMARKET,
+            ])
+            ->assertHasNoActionErrors();
+
+        // The next offer advances to OC-00002 (no gap, no collision).
+        Livewire::test(MarketComparison::class)
+            ->call('toggleSupplierPriority', $canonical->id, $supplierProductId)
+            ->callAction('createSupermarketOffer', data: [
+                'customer_id' => $supermarket->id,
+                'offer_number' => 'OC-00002',
+                'currency' => 'RON',
+                'sale_mode' => SupermarketOfferBuilder::SALE_FROM_SUPERMARKET,
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertSame(
+            ['OC-00001', 'OC-00002'],
+            CustomerOffer::query()->orderBy('id')->pluck('offer_number')->all(),
+        );
+    }
+
+    private function attachSupplierProduct(CanonicalProduct $canonical, string $supplierName, float $unitPrice): SupplierProduct
+    {
+        $supplier = Supplier::create(['name' => $supplierName]);
+        $product = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => $supplierName.' product',
+            'status' => 'active',
+            'unit_price' => $unitPrice,
+            'currency' => 'RON',
+            'quantity_available' => 100,
+        ]);
+        $canonical->supplierProducts()->attach($product);
+
+        return $product;
     }
 
     private function canonicalWithPrices(float $supplierLanded, float $supermarketGross): CanonicalProduct

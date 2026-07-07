@@ -4,12 +4,12 @@ namespace App\Modules\Supermarkets\Filament\Resources\SupermarketProducts;
 
 use App\Modules\MarketComparison\Filament\Resources\CanonicalProducts\CanonicalProductResource;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
+use App\Modules\ProductCategories\Models\ProductCategory;
+use App\Modules\Products\Models\PackagingMethod;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\CreateSupermarketProduct;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\EditSupermarketProduct;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\ListSupermarketProducts;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
-use App\Modules\Products\Models\PackagingMethod;
-use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Units\Models\Unit;
 use App\Support\Countries;
 use BackedEnum;
@@ -19,8 +19,8 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
@@ -330,7 +330,7 @@ class SupermarketProductResource extends Resource
     {
         return $table
             ->columns([
-                ImageColumn::make('image_path')
+                ImageColumn::make('display_image_path')
                     ->label('Photo')
                     ->disk('public')
                     ->square()

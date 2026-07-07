@@ -3,6 +3,7 @@
 namespace Database\Seeders\Concerns;
 
 use App\Models\Tenant;
+use App\Models\User;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -55,7 +56,7 @@ trait SeedsTenantRoles
      */
     protected array $ownedSubjects = [
         'sales_agent' => ['Customer', 'CustomerOffer', 'SalesOrder', 'SupermarketPrice', 'SupermarketProduct'],
-        'purchasing_agent' => ['Supplier', 'SupplierOffer', 'SupplierProduct', 'SupplierOrder', 'SupplierLead', 'Transporter'],
+        'purchasing_agent' => ['Supplier', 'SupplierOffer', 'SupplierProduct', 'SupplierOrder', 'SupplierLead', 'Transporter', 'CustomerOffer'],
     ];
 
     /**
@@ -138,7 +139,7 @@ trait SeedsTenantRoles
      * Assign a global role to a user (team context = null). The user is NOT
      * attached to any tenant — they have global access across the business.
      */
-    protected function assignGlobalRole(\App\Models\User $user, string $roleName): void
+    protected function assignGlobalRole(User $user, string $roleName): void
     {
         setPermissionsTeamId(null);
         $user->assignRole($roleName);

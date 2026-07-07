@@ -380,7 +380,7 @@ class SupplierProductResource extends Resource
     {
         return $table
             ->columns([
-                ImageColumn::make('image_path')->label(__('Photo'))->disk('public')->square()->size(48),
+                ImageColumn::make('display_image_path')->label(__('Photo'))->disk('public')->square()->size(48),
                 TextColumn::make('supplier.name')->label(__('Supplier'))->searchable()->sortable(),
                 TextColumn::make('name')->label(__('Name'))->searchable()->sortable(),
                 IconColumn::make('is_bio')
@@ -392,7 +392,7 @@ class SupplierProductResource extends Resource
                     ->falseColor('gray')
                     ->sortable(),
                 TextColumn::make('packagingMethod.name')->label(__('Packaging'))->placeholder('-')->sortable()->toggleable(),
-                TextColumn::make('unit_price')->label(__('Price / unit'))->numeric(decimalPlaces: 4)->sortable(),
+                TextColumn::make('unit_price')->label(__('Price / unit'))->numeric(decimalPlaces: 2)->sortable(),
                 TextColumn::make('currency')->label(__('Currency'))->sortable()->toggleable(),
                 TextColumn::make('min_quantity_value')
                     ->label(__('Min qty'))

@@ -4,13 +4,17 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use App\Models\User;
-use App\Modules\Customers\Models\Customer;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
+use App\Modules\Customers\Models\Customer;
+use App\Modules\NumberSequences\Filament\Resources\NumberSequences\Pages\ListNumberSequences;
 use App\Modules\NumberSequences\Models\NumberSequence;
 use App\Modules\NumberSequences\Services\NumberSequenceGenerator;
 use App\Modules\SupplierOffers\Models\SupplierOffer;
 use App\Modules\Suppliers\Models\Supplier;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class NumberSequenceTest extends TestCase
@@ -101,15 +105,15 @@ class NumberSequenceTest extends TestCase
         $user = User::factory()->create();
         $tenant->users()->attach($user);
         $this->actingAs($user);
-        \Filament\Facades\Filament::setTenant($tenant);
+        Filament::setTenant($tenant);
         \setPermissionsTeamId($tenant->getKey());
         $user->givePermissionTo(
-            \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'ViewAny:NumberSequence', 'guard_name' => 'web']),
-            \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'View:NumberSequence', 'guard_name' => 'web']),
-            \Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'Update:NumberSequence', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'ViewAny:NumberSequence', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'View:NumberSequence', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'Update:NumberSequence', 'guard_name' => 'web']),
         );
 
-        \Livewire\Livewire::test(\App\Modules\NumberSequences\Filament\Resources\NumberSequences\Pages\ListNumberSequences::class)
+        Livewire::test(ListNumberSequences::class)
             ->assertSuccessful()
             ->assertCanSeeTableRecords(
                 NumberSequence::query()->withoutGlobalScopes()->where('tenant_id', $tenant->id)->get(),

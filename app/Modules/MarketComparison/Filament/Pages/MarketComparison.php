@@ -17,6 +17,7 @@ use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
@@ -32,6 +33,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 use UnitEnum;
 
 class MarketComparison extends Page implements HasTable
@@ -62,18 +64,43 @@ class MarketComparison extends Page implements HasTable
     protected array $rowCache = [];
 
     /**
+     * Supplier candidates memoized per request, keyed by canonical product id,
+     * so the several columns that need them don't each re-run the query.
+     *
+     * @var array<int, Collection<int, SupplierPriceCandidate>>
+     */
+    protected array $supplierCandidatesCache = [];
+
+    /**
+     * Default (margin-descending) product ordering, cached across Livewire
+     * requests. It doesn't change when the user picks suppliers, so recomputing
+     * it (which assembles every product) on each interaction is wasteful; it is
+     * recomputed only after a full page load.
+     *
+     * @var list<int>
+     */
+    public array $marginOrderCache = [];
+
+    /**
      * @var array<int, array<int, array<string, mixed>>>
      */
     public array $expandedCanonicalIds = [];
 
     /**
-     * Hand-picked supplier per canonical product, set from the breakdown's
-     * "Supplier prices" rows. Overrides the cheapest supplier when the offer is
-     * built. Keyed canonicalProductId => supplierProductId.
+     * Prioritized suppliers per canonical product, set from the breakdown's
+     * "Supplier prices" rows by clicking them in order. The list order is the
+     * contact priority (index 0 = priority #1 = buy source for the offer).
+     * Keyed canonicalProductId => ordered list of supplierProductIds.
      *
-     * @var array<int, int>
+     * @var array<int, list<int>>
      */
     public array $selectedSupplierProductIds = [];
+
+    /**
+     * Maximum suppliers that can be prioritized per product. Set to null to
+     * lift the cap.
+     */
+    public const MAX_SUPPLIERS_PER_PRODUCT = 5;
 
     public function getTitle(): string
     {
@@ -274,12 +301,12 @@ class MarketComparison extends Page implements HasTable
         $row = $this->assembleRow($canonicalProduct);
 
         $this->expandedCanonicalIds[$canonicalId] = [
-            'suppliers' => app(SupplierBestPriceQuery::class)
-                ->candidatesFor($canonicalProduct)
+            'suppliers' => $this->supplierCandidatesFor($canonicalProduct)
                 ->map(fn ($candidate): array => [
                     'id' => $candidate->supplierProduct->getKey(),
                     'name' => $candidate->supplierName,
-                    'country' => Countries::label($candidate->countryOfOrigin),
+                    'city' => $candidate->supplierProduct->producer?->city,
+                    'country' => Countries::normalize($candidate->supplierProduct->producer?->country),
                     'landed_cost' => $candidate->landedCost,
                     'unit_price' => $candidate->unitPrice,
                     'currency' => $candidate->currency,
@@ -302,26 +329,70 @@ class MarketComparison extends Page implements HasTable
     }
 
     /**
-     * Pick (or unpick) a specific supplier as the buy source for a canonical
-     * product. Selecting a supplier also includes the product in the offer (its
-     * parent checkbox), since both share the same selection. Only one supplier
-     * per product; re-picking the same one clears the whole selection for it.
+     * Toggle a supplier's priority for a canonical product. Clicking suppliers
+     * in sequence appends them (priority 1, 2, 3… in click order); clicking an
+     * already-picked supplier removes it and renumbers the rest. When the last
+     * supplier is removed, the product drops out of the offer entirely.
      */
-    public function selectSupplier(int $canonicalId, int $supplierProductId): void
+    public function toggleSupplierPriority(int $canonicalId, int $supplierProductId): void
     {
-        if ((int) ($this->selectedSupplierProductIds[$canonicalId] ?? 0) === $supplierProductId) {
-            unset($this->selectedSupplierProductIds[$canonicalId]);
+        $list = $this->selectedSupplierProductIds[$canonicalId] ?? [];
+        $position = array_search($supplierProductId, $list, true);
+
+        if ($position !== false) {
+            array_splice($list, $position, 1);
+
+            if ($list === []) {
+                unset($this->selectedSupplierProductIds[$canonicalId]);
+
+                return;
+            }
+
+            $this->selectedSupplierProductIds[$canonicalId] = $list;
 
             return;
         }
 
-        $this->selectedSupplierProductIds[$canonicalId] = $supplierProductId;
+        if (self::MAX_SUPPLIERS_PER_PRODUCT !== null && count($list) >= self::MAX_SUPPLIERS_PER_PRODUCT) {
+            Notification::make()
+                ->title(__('At most :count suppliers per product', ['count' => self::MAX_SUPPLIERS_PER_PRODUCT]))
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $list[] = $supplierProductId;
+        $this->selectedSupplierProductIds[$canonicalId] = $list;
     }
 
     /**
-     * Main-row checkbox: include or drop a product from the offer, defaulting to
-     * its cheapest supplier. Picking a specific supplier in the expanded breakdown
-     * feeds the same selection, so both stay in sync.
+     * The 1-based contact priority of a supplier for a product, or null when it
+     * is not selected. Drives the priority chip in the breakdown.
+     */
+    public function supplierPriority(int $canonicalId, int $supplierProductId): ?int
+    {
+        $list = $this->selectedSupplierProductIds[$canonicalId] ?? [];
+        $position = array_search($supplierProductId, $list, true);
+
+        return $position === false ? null : $position + 1;
+    }
+
+    /**
+     * The ordered supplierProductIds prioritized for a product (priority order).
+     *
+     * @return list<int>
+     */
+    public function prioritizedSupplierProductIds(int $canonicalId): array
+    {
+        return $this->selectedSupplierProductIds[$canonicalId] ?? [];
+    }
+
+    /**
+     * Include or drop a product from the offer as a whole, seeding priority #1
+     * with the given (cheapest) supplier when empty. The main-row checkbox is a
+     * read-only state indicator, so this is only used programmatically / by the
+     * Best Prices page; the primary selection path is per-supplier priority.
      */
     public function toggleProductSelection(int $canonicalId, int $bestSupplierProductId): void
     {
@@ -331,7 +402,7 @@ class MarketComparison extends Page implements HasTable
             return;
         }
 
-        $this->selectedSupplierProductIds[$canonicalId] = $bestSupplierProductId;
+        $this->selectedSupplierProductIds[$canonicalId] = [$bestSupplierProductId];
     }
 
     public function isProductSelected(int $canonicalId): bool
@@ -341,7 +412,7 @@ class MarketComparison extends Page implements HasTable
 
     public function isSupplierSelected(int $canonicalId, int $supplierProductId): bool
     {
-        return (int) ($this->selectedSupplierProductIds[$canonicalId] ?? 0) === $supplierProductId;
+        return $this->supplierPriority($canonicalId, $supplierProductId) !== null;
     }
 
     public function bestSupplierProductId(CanonicalProduct $record): ?int
@@ -355,15 +426,24 @@ class MarketComparison extends Page implements HasTable
     }
 
     /**
+     * Supplier candidates for a product, memoized per request.
+     *
+     * @return Collection<int, SupplierPriceCandidate>
+     */
+    protected function supplierCandidatesFor(CanonicalProduct $canonicalProduct): Collection
+    {
+        return $this->supplierCandidatesCache[$canonicalProduct->getKey()]
+            ??= app(SupplierBestPriceQuery::class)->candidatesFor($canonicalProduct);
+    }
+
+    /**
      * The supplier candidate that will be used for a canonical product: the
      * hand-picked one when pinned, otherwise the cheapest by landed cost.
      */
     protected function chosenSupplierCandidate(CanonicalProduct $canonicalProduct): ?SupplierPriceCandidate
     {
-        $candidates = app(SupplierBestPriceQuery::class)->candidatesFor($canonicalProduct);
-        $pinnedId = isset($this->selectedSupplierProductIds[$canonicalProduct->getKey()])
-            ? (int) $this->selectedSupplierProductIds[$canonicalProduct->getKey()]
-            : null;
+        $candidates = $this->supplierCandidatesFor($canonicalProduct);
+        $pinnedId = $this->selectedSupplierProductIds[$canonicalProduct->getKey()][0] ?? null;
 
         if ($pinnedId !== null) {
             $pinned = $candidates->first(
@@ -391,24 +471,74 @@ class MarketComparison extends Page implements HasTable
     {
         return $records->map(function (CanonicalProduct $record): array {
             $row = $this->assembleRow($record);
-            $supplier = $this->chosenSupplierCandidate($record);
+            $candidates = $this->prioritizedSupplierCandidates($record);
+            $primary = $candidates[0] ?? null;
             $supermarket = $row->bestSupermarket;
+
+            // Average of the chosen suppliers' product prices (unit price, not
+            // landed cost) and the total quantity they can supply between them.
+            $prices = array_map(fn (SupplierPriceCandidate $candidate): float => $candidate->unitPrice, $candidates);
+            $availabilities = array_values(array_filter(
+                array_map(fn (SupplierPriceCandidate $candidate): ?float => $candidate->quantityAvailable, $candidates),
+                fn (?float $value): bool => $value !== null,
+            ));
 
             return [
                 'canonical_id' => $record->getKey(),
                 'product' => $record->name,
                 'packaging' => $record->packaging_variant,
                 'country' => Countries::label($record->country_of_origin),
-                'supplier' => $supplier?->supplierName,
-                'landed_cost' => $supplier?->landedCost,
-                'supplier_currency' => $supplier?->currency,
-                'quantity_available' => $supplier?->quantityAvailable,
+                'avg_price' => $prices !== [] ? array_sum($prices) / count($prices) : null,
+                'supplier_currency' => $primary?->currency,
+                // The editable quantity's ceiling: the suppliers' combined availability.
+                'quantity_available' => $availabilities !== [] ? array_sum($availabilities) : null,
                 'supermarket' => $supermarket?->supermarketName,
                 'supermarket_price' => $supermarket?->grossPrice,
                 'supermarket_currency' => $supermarket?->currency,
-                'has_supplier' => $supplier !== null,
+                'has_supplier' => $primary !== null,
+                'suppliers' => array_map(fn (SupplierPriceCandidate $candidate, int $index): array => [
+                    'priority' => $index + 1,
+                    'name' => $candidate->supplierName,
+                    'country' => Countries::label($candidate->countryOfOrigin),
+                    'price' => $candidate->unitPrice,
+                    'currency' => $candidate->currency,
+                    'quantity_available' => $candidate->quantityAvailable,
+                ], $candidates, array_keys($candidates)),
             ];
         })->all();
+    }
+
+    /**
+     * The supplier candidates for a product in the user's chosen priority order.
+     * Falls back to the single cheapest supplier when none were pinned, so a
+     * product always resolves at least one supplier.
+     *
+     * @return list<SupplierPriceCandidate>
+     */
+    protected function prioritizedSupplierCandidates(CanonicalProduct $canonicalProduct): array
+    {
+        $candidates = $this->supplierCandidatesFor($canonicalProduct);
+        $ids = $this->prioritizedSupplierProductIds($canonicalProduct->getKey());
+
+        $ordered = [];
+
+        foreach ($ids as $supplierProductId) {
+            $candidate = $candidates->first(
+                fn (SupplierPriceCandidate $candidate): bool => $candidate->supplierProduct->getKey() === $supplierProductId,
+            );
+
+            if ($candidate !== null) {
+                $ordered[] = $candidate;
+            }
+        }
+
+        if ($ordered !== []) {
+            return $ordered;
+        }
+
+        $cheapest = $candidates->first();
+
+        return $cheapest !== null ? [$cheapest] : [];
     }
 
     protected function formatSupplier(CanonicalProduct $record): string
@@ -486,7 +616,15 @@ class MarketComparison extends Page implements HasTable
      */
     protected function marginOrderedIds(): array
     {
-        return CanonicalProduct::query()
+        // Assembling every product (best supplier + supermarket price per row) is
+        // expensive, and the ordering is independent of the user's supplier
+        // selection — so compute it once per page load and reuse it on every
+        // subsequent Livewire interaction.
+        if ($this->marginOrderCache !== []) {
+            return $this->marginOrderCache;
+        }
+
+        return $this->marginOrderCache = CanonicalProduct::query()
             ->get()
             ->map(fn (CanonicalProduct $canonicalProduct): MarketComparisonRow => $this->assembleRow($canonicalProduct))
             ->sortByDesc(fn (MarketComparisonRow $row): float => $row->margin ?? -INF)

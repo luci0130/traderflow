@@ -41,7 +41,10 @@ class CustomerOfferCalculator
 
     public function recalculateOffer(CustomerOffer $offer): void
     {
-        $items = $offer->items()->get();
+        // Only lines the seller keeps in the order (via their suppliers) contribute
+        // to the offer totals.
+        $items = $offer->items()->with('suppliers')->get()
+            ->filter(fn (CustomerOfferItem $item): bool => $item->isIncludedInOrder());
 
         $subtotal = 0.0;
         $taxTotal = 0.0;

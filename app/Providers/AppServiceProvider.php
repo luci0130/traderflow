@@ -3,10 +3,14 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Support\CategoryImages;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
+use Filament\Tables\Columns\Column;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Table;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -29,6 +33,10 @@ class AppServiceProvider extends ServiceProvider
         if (request()->server('HTTP_X_FORWARDED_PROTO') === 'https') {
             URL::forceScheme('https');
         }
+
+        // Shared across a request so a whole table render resolves category
+        // fallback images with a single query.
+        $this->app->singleton(CategoryImages::class);
     }
 
     /**
@@ -40,6 +48,39 @@ class AppServiceProvider extends ServiceProvider
         $this->configureSuperAdminGate();
         $this->configureModulePolicyDiscovery();
         $this->configureFilamentTutorials();
+        $this->configureFilamentTableColumns();
+    }
+
+    /**
+     * Make table columns user-manageable everywhere: every column is
+     * toggleable (hideable) by default so none are mandatory, and every table
+     * lets users reorder its columns. Registering on the base Column class
+     * cascades to all column types (TextColumn, IconColumn, ImageColumn, ...);
+     * individual columns may still opt out with ->toggleable(false).
+     */
+    protected function configureFilamentTableColumns(): void
+    {
+        Column::configureUsing(function (Column $column): void {
+            $column->toggleable();
+        });
+
+        Table::configureUsing(function (Table $table): void {
+            $table->reorderableColumns();
+        });
+
+        // Cap raw decimal values at 2 visible decimals across every table column
+        // (prices, percentages, quantities). This only touches numeric strings
+        // that carry a decimal point with more than two places; columns with
+        // their own formatter (money/date/badge/numeric) override this default.
+        TextColumn::configureUsing(function (TextColumn $column): void {
+            $column->formatStateUsing(function (mixed $state): mixed {
+                if (is_numeric($state) && str_contains((string) $state, '.')) {
+                    return rtrim(rtrim(number_format((float) $state, 2, '.', ''), '0'), '.');
+                }
+
+                return $state;
+            });
+        });
     }
 
     /**

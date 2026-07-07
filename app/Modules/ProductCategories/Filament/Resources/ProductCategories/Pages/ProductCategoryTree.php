@@ -16,6 +16,7 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class ProductCategoryTree extends Page
@@ -66,6 +67,10 @@ class ProductCategoryTree extends Page
                         ])
                         ->default('active')
                         ->required(),
+                    ProductCategoryResource::imageUploadField()
+                        ->columnSpanFull(),
+                    ProductCategoryResource::imageUrlField()
+                        ->columnSpanFull(),
                 ])
                     ->columns(2)
                     ->livewireSubmitHandler('save')
@@ -118,6 +123,7 @@ class ProductCategoryTree extends Page
             'name' => $data['name'],
             'parent_id' => $parentId,
             'status' => $data['status'],
+            'image_path' => $data['image_path'] ?? null,
         ]);
         $category->save();
 
@@ -130,7 +136,7 @@ class ProductCategoryTree extends Page
     }
 
     /**
-     * @return array<int, array{id: int, name: string, status: string, products_count: int, children: array<int, mixed>}>
+     * @return array<int, array{id: int, name: string, status: string, image_url: ?string, products_count: int, children: array<int, mixed>}>
      */
     public function getCategoryTree(): array
     {
@@ -183,6 +189,7 @@ class ProductCategoryTree extends Page
             'name',
             'parent_id',
             'status',
+            'image_path',
         ]) ?? []);
     }
 
@@ -244,7 +251,7 @@ class ProductCategoryTree extends Page
     protected function getTreeCategories(): Collection
     {
         return $this->getScopedCategoryQuery()
-            ->select(['id', 'tenant_id', 'parent_id', 'name', 'status'])
+            ->select(['id', 'tenant_id', 'parent_id', 'name', 'status', 'image_path'])
             ->withCount('products')
             ->orderBy('name')
             ->get();
@@ -252,7 +259,7 @@ class ProductCategoryTree extends Page
 
     /**
      * @param  Collection<int|string, Collection<int, ProductCategory>>  $childrenByParent
-     * @return array{id: int, name: string, status: string, products_count: int, children: array<int, mixed>}
+     * @return array{id: int, name: string, status: string, image_url: ?string, products_count: int, children: array<int, mixed>}
      */
     protected function mapCategoryTreeNode(ProductCategory $category, Collection $childrenByParent): array
     {
@@ -260,6 +267,7 @@ class ProductCategoryTree extends Page
             'id' => (int) $category->id,
             'name' => $category->name,
             'status' => $category->status,
+            'image_url' => filled($category->image_path) ? Storage::disk('public')->url($category->image_path) : null,
             'products_count' => (int) ($category->products_count ?? 0),
             'children' => $childrenByParent
                 ->get($category->id, collect())

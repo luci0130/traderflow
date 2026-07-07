@@ -10,6 +10,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -220,6 +221,70 @@ class ProductCategoryTreePageTest extends TestCase
             'id' => $root->id,
             'parent_id' => null,
         ]);
+    }
+
+    public function test_tree_node_exposes_the_category_image_url(): void
+    {
+        [$tenant, $user] = $this->createTenantUser();
+
+        ProductCategory::create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Fresh Food',
+            'image_path' => 'product-categories/fresh-food.png',
+        ]);
+
+        $this->actingAs($user);
+        Filament::setTenant($tenant);
+
+        $tree = Livewire::test(ProductCategoryTree::class)->instance()->getCategoryTree();
+
+        $this->assertStringContainsString('product-categories/fresh-food.png', $tree[0]['image_url']);
+    }
+
+    public function test_tree_page_shows_the_download_from_url_field(): void
+    {
+        [$tenant, $user] = $this->createTenantUser();
+
+        ProductCategory::create(['tenant_id' => $tenant->id, 'name' => 'Fresh Food']);
+
+        $this->actingAs($user);
+        Filament::setTenant($tenant);
+
+        Livewire::test(ProductCategoryTree::class)
+            ->assertSee('Download image from URL');
+    }
+
+    public function test_image_path_is_persisted_when_saving_the_category(): void
+    {
+        [$tenant, $user] = $this->createTenantUser();
+
+        $category = ProductCategory::create(['tenant_id' => $tenant->id, 'name' => 'Fresh Food']);
+
+        $this->actingAs($user);
+        Filament::setTenant($tenant);
+
+        Livewire::test(ProductCategoryTree::class)
+            ->call('selectCategory', $category->id)
+            ->set('data.image_path', ['product-categories/manual.webp'])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame('product-categories/manual.webp', $category->refresh()->image_path);
+    }
+
+    public function test_deleting_a_category_removes_its_stored_image(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('product-categories/fresh-food.png', 'binary');
+
+        $category = ProductCategory::create([
+            'name' => 'Fresh Food',
+            'image_path' => 'product-categories/fresh-food.png',
+        ]);
+
+        $category->delete();
+
+        Storage::disk('public')->assertMissing('product-categories/fresh-food.png');
     }
 
     /**

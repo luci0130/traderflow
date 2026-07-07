@@ -45,13 +45,29 @@
                     'text-gray-700 hover:bg-gray-50 hover:text-gray-950 dark:text-gray-200 dark:hover:bg-white/5 dark:hover:text-white' => ! $isSelected,
                 ])
             >
-                <span
-                    @class([
-                        'h-2 w-2 shrink-0 rounded-full',
-                        'bg-success-500' => $node['status'] === 'active',
-                        'bg-gray-400 dark:bg-gray-500' => $node['status'] !== 'active',
-                    ])
-                ></span>
+                <span class="relative shrink-0">
+                    @if (! empty($node['image_url']))
+                        <img
+                            src="{{ $node['image_url'] }}"
+                            alt=""
+                            loading="lazy"
+                            class="h-8 w-8 rounded-md object-cover ring-1 ring-gray-200 dark:ring-white/10"
+                        />
+                    @else
+                        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-gray-100 text-gray-300 ring-1 ring-gray-200 dark:bg-white/5 dark:text-white/30 dark:ring-white/10">
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path d="M4 3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4Zm12 12H4l3.5-4.5 2.5 3 3.5-4.5L16 15Z" />
+                            </svg>
+                        </span>
+                    @endif
+                    <span
+                        @class([
+                            'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-gray-900',
+                            'bg-success-500' => $node['status'] === 'active',
+                            'bg-gray-400 dark:bg-gray-500' => $node['status'] !== 'active',
+                        ])
+                    ></span>
+                </span>
 
                 <span class="min-w-0 truncate font-medium">{{ $node['name'] }}</span>
 
