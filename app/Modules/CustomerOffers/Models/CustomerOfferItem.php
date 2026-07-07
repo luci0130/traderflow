@@ -94,4 +94,17 @@ class CustomerOfferItem extends Model
 
         return $suppliers->isEmpty() || $suppliers->contains(fn (CustomerOfferItemSupplier $supplier): bool => (bool) $supplier->include_in_order);
     }
+
+    /**
+     * The total quantity secured across the suppliers kept in the order — the
+     * "Total Secured Qty" shown on the sourcing board.
+     */
+    public function totalSecuredQuantity(): float
+    {
+        $suppliers = $this->relationLoaded('suppliers') ? $this->suppliers : $this->suppliers()->get();
+
+        return (float) $suppliers
+            ->filter(fn (CustomerOfferItemSupplier $supplier): bool => (bool) $supplier->include_in_order)
+            ->sum(fn (CustomerOfferItemSupplier $supplier): float => (float) ($supplier->secured_quantity ?? 0));
+    }
 }

@@ -64,7 +64,7 @@ class CustomerOfferExcelExporterTest extends TestCase
             'total' => 0,
         ]);
 
-        CustomerOfferItem::create([
+        $item = CustomerOfferItem::create([
             'tenant_id' => $tenant->id,
             'customer_offer_id' => $offer->id,
             'product_id' => $product->id,
@@ -76,6 +76,15 @@ class CustomerOfferExcelExporterTest extends TestCase
             'tax_rate' => 0,
             'line_total' => 750,
             'notes' => 'Livrare săptămânală',
+        ]);
+
+        // Sourcing rows: the "Cantitate disponibilă" column reports the total
+        // secured quantity across the suppliers kept in the order (120 + 80 = 200).
+        // The excluded supplier's secured quantity is left out.
+        $item->suppliers()->createMany([
+            ['supplier_id' => $supplier->id, 'priority' => 1, 'include_in_order' => true, 'secured_quantity' => 120],
+            ['supplier_id' => $supplier->id, 'priority' => 2, 'include_in_order' => true, 'secured_quantity' => 80],
+            ['supplier_id' => $supplier->id, 'priority' => 3, 'include_in_order' => false, 'secured_quantity' => 50],
         ]);
 
         $path = app(CustomerOfferExcelExporter::class)->export($offer->refresh());
@@ -121,9 +130,11 @@ class CustomerOfferExcelExporterTest extends TestCase
         $this->assertContains('Extra', $cells);
         $this->assertContains('40-60mm', $cells);
         $this->assertContains('Livrare săptămânală', $cells);
-        // Price and quantity are written as numbers (int/float depending on value).
+        // Price and secured quantity are written as numbers (int/float depending on value).
         $this->assertTrue($this->cellsContainNumber($cells, 2.5));
-        $this->assertTrue($this->cellsContainNumber($cells, 300));
+        // "Cantitate disponibilă" shows the total secured qty (200), not the desired 300.
+        $this->assertTrue($this->cellsContainNumber($cells, 200));
+        $this->assertFalse($this->cellsContainNumber($cells, 300));
         // Origin rendered as a country label, not the raw ISO code.
         $this->assertContains('Romania', $cells);
     }
@@ -135,7 +146,7 @@ class CustomerOfferExcelExporterTest extends TestCase
      */
     private function readCells(string $path): array
     {
-        $reader = new Reader();
+        $reader = new Reader;
         $reader->open($path);
 
         $cells = [];
@@ -160,7 +171,7 @@ class CustomerOfferExcelExporterTest extends TestCase
      */
     private function readMergeRefs(string $path): array
     {
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $zip->open($path);
         $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
         $zip->close();

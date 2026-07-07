@@ -78,6 +78,7 @@ class CustomerOfferExcelExporter
             'tenant',
             'items.product.category',
             'items.supplierProduct.packagingMethod',
+            'items.suppliers',
         ]);
 
         $path = tempnam(sys_get_temp_dir(), 'offer_').'.xlsx';
@@ -181,6 +182,8 @@ class CustomerOfferExcelExporter
         $category = $supplierProduct?->category ?: $item->product?->category?->name;
         $packaging = $supplierProduct?->default_packaging ?: $supplierProduct?->packagingMethod?->name;
 
+        $securedQuantity = $item->totalSecuredQuantity();
+
         return [
             $category ?? '',
             $item->product?->name ?? ($supplierProduct?->name ?? ''),
@@ -189,7 +192,7 @@ class CustomerOfferExcelExporter
             $supplierProduct?->quality ?? '',
             $supplierProduct?->caliber ?? '',
             $item->sale_price !== null ? (float) $item->sale_price : null,
-            $item->quantity !== null ? (float) $item->quantity : null,
+            $securedQuantity > 0 ? $securedQuantity : null,
             $item->notes ?? '',
         ];
     }
