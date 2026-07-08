@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 
 class SupplierProduct extends Model
 {
@@ -46,6 +47,17 @@ class SupplierProduct extends Model
         return Attribute::get(fn (): ?string => filled($this->image_path)
             ? $this->image_path
             : app(CategoryImages::class)->pathFor($this->category));
+    }
+
+    /**
+     * Public URL for the display image (own or inherited from the category by
+     * name), or null when neither exists.
+     */
+    public function displayImageUrl(): ?string
+    {
+        return filled($this->display_image_path)
+            ? Storage::disk('public')->url($this->display_image_path)
+            : null;
     }
 
     public function producer(): BelongsTo

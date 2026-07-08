@@ -66,7 +66,10 @@
                         $securedPct = $desired > 0 ? min(100, round(($securedTotal / $desired) * 100)) : 0;
                         $securedColor = $securedPct >= 100 ? 'bg-success-500' : ($securedPct > 0 ? 'bg-warning-500' : 'bg-gray-300 dark:bg-white/20');
 
-                        $imageUrl = $item->product?->displayImageUrl();
+                        // Prefer the product's own/category image; fall back to the chosen
+                        // supplier product, whose category is matched by name (so a product
+                        // with no product_category_id still shows its category picture).
+                        $imageUrl = $item->product?->displayImageUrl() ?? $item->supplierProduct?->displayImageUrl();
 
                         // Product country of origin (from its supplier products) — used for the
                         // flag next to the name. Hidden for now; re-enable together with the

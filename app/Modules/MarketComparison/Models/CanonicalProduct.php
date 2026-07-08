@@ -7,6 +7,7 @@ use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Products\Models\PackagingMethod;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
+use App\Support\CategoryImages;
 use App\Support\Countries;
 use Database\Factories\CanonicalProductFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class CanonicalProduct extends Model
 {
@@ -54,6 +56,20 @@ class CanonicalProduct extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ProductCategory::class, 'product_category_id');
+    }
+
+    /**
+     * Public URL for the category picture, used as the product thumbnail. Prefers
+     * the linked category's image and falls back to a name match (category name,
+     * then the product's own name) so unlinked rows still resolve a picture.
+     */
+    public function displayImageUrl(): ?string
+    {
+        $path = filled($this->category?->image_path)
+            ? $this->category->image_path
+            : app(CategoryImages::class)->pathFor($this->category?->name ?? $this->name);
+
+        return filled($path) ? Storage::disk('public')->url($path) : null;
     }
 
     public function packagingMethod(): BelongsTo

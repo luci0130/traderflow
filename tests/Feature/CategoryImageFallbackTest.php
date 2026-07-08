@@ -48,4 +48,15 @@ class CategoryImageFallbackTest extends TestCase
         $this->assertSame('supermarket-products/own.webp', $withImage->display_image_path);
         $this->assertSame('product-categories/cartofi.webp', $withoutImage->display_image_path);
     }
+
+    public function test_supplier_product_display_image_url_resolves_the_category_image_by_name(): void
+    {
+        ProductCategory::create(['name' => 'Cartofi', 'image_path' => 'product-categories/cartofi.webp']);
+
+        $withoutImage = new SupplierProduct(['category' => 'Cartofi']);
+        $unmatched = new SupplierProduct(['category' => 'Necunoscut']);
+
+        $this->assertStringContainsString('product-categories/cartofi.webp', $withoutImage->displayImageUrl());
+        $this->assertNull($unmatched->displayImageUrl());
+    }
 }

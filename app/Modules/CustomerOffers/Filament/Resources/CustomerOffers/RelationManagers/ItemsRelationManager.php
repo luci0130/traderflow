@@ -119,7 +119,7 @@ class ItemsRelationManager extends RelationManager
     public function boardItems(): Collection
     {
         return $this->getOwnerRecord()->items()
-            ->with(['product.category', 'unit', 'suppliers.supplier', 'suppliers.supplierProduct'])
+            ->with(['product.category', 'supplierProduct', 'unit', 'suppliers.supplier', 'suppliers.supplierProduct'])
             ->get();
     }
 

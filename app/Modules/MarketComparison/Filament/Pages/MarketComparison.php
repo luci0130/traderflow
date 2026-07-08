@@ -131,9 +131,11 @@ class MarketComparison extends Page implements HasTable
             ->query(fn (): Builder => $this->getComparisonQuery())
             ->recordTitleAttribute('name')
             ->columns([
-                Grid::make(['default' => 1, 'lg' => 17])
+                Grid::make(['default' => 1, 'lg' => 18])
                     ->schema([
                         View::make('filament.pages.market-comparison.partials.product-select')
+                            ->columnSpan(['lg' => 1]),
+                        View::make('filament.pages.market-comparison.partials.product-image')
                             ->columnSpan(['lg' => 1]),
                         TextColumn::make('name')
                             ->label(__('Product'))
