@@ -11,9 +11,10 @@ use App\Modules\Customers\Models\Customer;
 use App\Modules\Products\Models\Product;
 use App\Modules\SalesOrders\Models\SalesOrder;
 use App\Modules\SupplierOffers\Models\SupplierOffer;
-use App\Modules\SupplierOffers\Models\SupplierOfferItem;
+use App\Modules\SupplierOrders\Filament\Resources\SupplierOrders\Pages\EditSupplierOrder;
 use App\Modules\SupplierOrders\Filament\Resources\SupplierOrders\SupplierOrderResource;
 use App\Modules\SupplierOrders\Models\SupplierOrder;
+use App\Modules\Suppliers\Models\Supplier;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -48,7 +49,7 @@ class EditCustomerOfferAcceptActionTest extends TestCase
         );
 
         $customer = Customer::create(['tenant_id' => $tenant->id, 'name' => 'Client']);
-        $supplier = \App\Modules\Suppliers\Models\Supplier::create(['tenant_id' => $tenant->id, 'name' => 'Ferma']);
+        $supplier = Supplier::create(['tenant_id' => $tenant->id, 'name' => 'Ferma']);
 
         // Offers created by the builder have a null offer_number; the select options
         // must still render (a null label previously crashed the page).
@@ -66,7 +67,7 @@ class EditCustomerOfferAcceptActionTest extends TestCase
             'order_date' => today(), 'subtotal' => 0, 'tax_total' => 0, 'total' => 0,
         ]);
 
-        Livewire::test(\App\Modules\SupplierOrders\Filament\Resources\SupplierOrders\Pages\EditSupplierOrder::class, [
+        Livewire::test(EditSupplierOrder::class, [
             'record' => $order->getRouteKey(),
         ])->assertSuccessful();
     }
@@ -86,20 +87,15 @@ class EditCustomerOfferAcceptActionTest extends TestCase
         );
 
         $customer = Customer::create(['tenant_id' => $tenant->id, 'name' => 'Mega Image']);
-        $supplier = \App\Modules\Suppliers\Models\Supplier::create(['tenant_id' => $tenant->id, 'name' => 'Ferma']);
+        $supplier = Supplier::create(['tenant_id' => $tenant->id, 'name' => 'Ferma']);
         $product = Product::create(['tenant_id' => $tenant->id, 'name' => 'Mere']);
 
         $offer = CustomerOffer::create([
             'tenant_id' => $tenant->id, 'customer_id' => $customer->id, 'currency' => 'RON',
             'status' => 'draft', 'offer_date' => today(), 'subtotal' => 0, 'tax_total' => 0, 'total' => 0,
         ]);
-        CustomerOfferItem::create(['tenant_id' => $tenant->id, 'customer_offer_id' => $offer->id, 'product_id' => $product->id, 'quantity' => 10, 'purchase_price' => 2, 'sale_price' => 3, 'tax_rate' => 0, 'line_total' => 30]);
-
-        $supplierOffer = SupplierOffer::create([
-            'tenant_id' => $tenant->id, 'supplier_id' => $supplier->id, 'customer_offer_id' => $offer->id,
-            'currency' => 'RON', 'status' => 'received', 'source_type' => 'manual', 'received_at' => today(),
-        ]);
-        SupplierOfferItem::create(['tenant_id' => $tenant->id, 'supplier_offer_id' => $supplierOffer->id, 'product_id' => $product->id, 'quantity' => 10, 'purchase_price' => 2, 'currency' => 'RON']);
+        $item = CustomerOfferItem::create(['tenant_id' => $tenant->id, 'customer_offer_id' => $offer->id, 'product_id' => $product->id, 'quantity' => 10, 'purchase_price' => 2, 'sale_price' => 3, 'tax_rate' => 0, 'line_total' => 30]);
+        $item->suppliers()->create(['supplier_id' => $supplier->id, 'priority' => 1, 'include_in_order' => true, 'landed_cost' => 2, 'currency' => 'RON', 'secured_quantity' => 10]);
 
         Livewire::test(EditCustomerOffer::class, ['record' => $offer->getRouteKey()])
             ->callAction('acceptOffer')
@@ -110,7 +106,6 @@ class EditCustomerOfferAcceptActionTest extends TestCase
         $this->assertSame(1, SupplierOrder::query()->count());
         $this->assertDatabaseHas('supplier_orders', [
             'customer_offer_id' => $offer->id,
-            'supplier_offer_id' => $supplierOffer->id,
             'supplier_id' => $supplier->id,
         ]);
 

@@ -32,7 +32,7 @@ class EditCustomerOffer extends EditRecord
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading(__('Accept offer'))
-                ->modalDescription(__('Accepting marks the offer as accepted, creates the sales order and a supplier order for every linked supplier offer.'))
+                ->modalDescription(__('Accepting marks the offer as accepted, creates the customer order (sale price × secured quantity) and one supplier order per chosen supplier with the quantity it secured.'))
                 ->visible(fn (CustomerOffer $record): bool => ! $record->salesOrder()->exists())
                 ->action(function (CustomerOffer $record): void {
                     try {
