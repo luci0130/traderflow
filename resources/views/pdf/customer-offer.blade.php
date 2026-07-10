@@ -1,8 +1,7 @@
 @php
     /**
      * A pre-rendered PNG icon (raster; mpdf's SVG renderer corrupts following
-     * colour state). Passing a white colour selects the white variant (for the
-     * red panels), anything else the red variant.
+     * colour state). Passing a white colour selects the white variant.
      */
     $icon = function (string $name, string $color = '#C32026', int $size = 16): string {
         $variant = in_array(strtolower($color), ['#fff', '#ffffff', 'white'], true) ? 'white' : 'red';
@@ -16,10 +15,9 @@
 <head>
 <meta charset="utf-8">
 <style>
-    body { margin: 0; font-family: inter, sans-serif; color: #333333; font-size: 13px; line-height: 1.35; }
-    .page { padding: 20px 24px 8px 24px; }
+    body { margin: 0; font-family: inter, sans-serif; color: #333333; font-size: 13px; line-height: 1.35; background: #FAFAFA; }
+    .page { padding: 22px 24px 6px 24px; }
 
-    /* weights */
     .w5 { font-family: intermedium, inter, sans-serif; }
     .w6 { font-family: intersemibold, inter, sans-serif; }
     .w7 { font-weight: bold; }
@@ -33,76 +31,90 @@
     table { border-collapse: collapse; width: 100%; }
     td { vertical-align: top; }
 
-    /* cards */
+    .hero { background: url('{{ $banner }}') no-repeat right top; background-size: contain; min-height: 118px; }
+
     .cards { border-collapse: separate; border-spacing: 12px 0; }
-    .card { background: #ffffff; border: 1px solid #EEEEEE; border-radius: 16px; padding: 16px 18px; }
-    .card-red { background: #C32026; border-radius: 18px; padding: 16px 18px; }
+    .card { background: #ffffff; border: 1px solid #E4E4E4; padding: 16px 18px; }
+    .card-red { background: #C32026; padding: 16px 18px; }
 
-    /* products */
-    .items thead td { background: #C32026; color: #ffffff; font-family: intersemibold, inter, sans-serif; font-size: 13px; padding: 12px 8px; }
-    .items tbody td { border-bottom: 1px solid #EEEEEE; padding: 10px 8px; font-family: intermedium, inter, sans-serif; }
+    .items { background: #ffffff; border: 1px solid #E4E4E4; }
+    .items thead td { background: #C32026; color: #ffffff; font-family: intersemibold, inter, sans-serif; font-size: 13px; padding: 13px 8px; }
+    .items tbody td { border-bottom: 1px solid #EEEEEE; padding: 13px 8px; font-family: intermedium, inter, sans-serif; }
     .items tbody tr.alt td { background: #FCFCFC; }
-    .thumb { width: 44px; height: 44px; }
+    .thumb { width: 46px; height: 46px; }
 
-    .divider td { border-left: 1px solid #ECECEC; }
-
-    .footer-bar { background: #C32026; color: #ffffff; padding: 16px 24px; margin-top: 18px; font-size: 12px; }
+    .footer-bar { background: #C32026; color: #ffffff; padding: 14px 24px; font-size: 12px; width: 100%; }
 </style>
 </head>
 <body>
+
+{{-- Red footer bar pinned to the bottom of every page. --}}
+<htmlpagefooter name="pdffooter">
+    <div class="footer-bar">
+        <table style="color: #ffffff;">
+            <tr>
+                <td style="width: 34%;">@if ($supplier['address'] !== '-'){!! $icon('pin', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['address'] }}</span>@endif</td>
+                <td style="width: 30%; text-align: center;">@if ($supplier['email']){!! $icon('envelope', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['email'] }}</span>@endif</td>
+                <td style="width: 18%; text-align: center;">@if ($supplier['phone']){!! $icon('phone', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['phone'] }}</span>@endif</td>
+                <td style="width: 18%; text-align: right;">@if ($supplier['website']){!! $icon('globe', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ preg_replace('#^https?://#', '', $supplier['website']) }}</span>@endif</td>
+            </tr>
+        </table>
+    </div>
+</htmlpagefooter>
+<sethtmlpagefooter name="pdffooter" value="on" />
+
 <div class="page">
 
-    {{-- ============================ HEADER ============================ --}}
-    <table>
-        <tr>
-            <td style="width: 27%;">
-                @if ($supplier['logo'])
-                    <img src="{{ $supplier['logo'] }}" style="width: 46px; height: 46px;" />
-                @else
-                    <div style="width: 46px; height: 46px; background: #C32026; border-radius: 12px; color: #fff; font-size: 24px; font-weight: bold; text-align: center; line-height: 46px;">{{ mb_substr($supplier['brand'], 0, 1) }}</div>
-                @endif
-                <div class="w7 primary" style="font-size: 22px; letter-spacing: 0.02em; margin-top: 10px;">{{ mb_strtoupper($supplier['brand']) }}</div>
-                <div class="label" style="margin-top: 3px;">{{ mb_strtoupper($supplier['name']) }}</div>
-            </td>
-            <td style="width: 35%; padding-left: 8px;">
-                <div class="w7 dark" style="font-size: 15px;">Fresh Fruits &amp; Vegetables</div>
-                <div class="w6 primary" style="font-size: 12px; margin: 4px 0 12px 0;">Quality. Freshness. Reliability.</div>
-                @if ($supplier['email'])
-                    <div style="margin-bottom: 6px;">{!! $icon('envelope', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['email'] }}</span></div>
-                @endif
-                @if ($supplier['phone'])
-                    <div style="margin-bottom: 6px;">{!! $icon('phone', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['phone'] }}</span></div>
-                @endif
-                @if ($supplier['website'])
-                    <div style="margin-bottom: 6px;">{!! $icon('globe', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['website'] }}</span></div>
-                @endif
-            </td>
-            <td style="width: 38%; text-align: right;"><img src="{{ $banner }}" style="width: 100%; max-width: 300px;" /></td>
-        </tr>
-    </table>
+    {{-- ============================ HEADER (banner as section background) ============================ --}}
+    <div class="hero">
+        <table>
+            <tr>
+                <td style="width: 26%; padding-right: 16px;">
+                    @if ($supplier['logo'])
+                        <img src="{{ $supplier['logo'] }}" height="42" />
+                        <div class="label" style="margin-top: 8px;">{{ mb_strtoupper($supplier['name']) }}</div>
+                    @else
+                        <div style="width: 46px; height: 46px; background: #C32026; border-radius: 12px; color: #fff; font-size: 24px; font-weight: bold; text-align: center; line-height: 46px;">{{ mb_substr($supplier['brand'], 0, 1) }}</div>
+                        <div class="w7 primary" style="font-size: 18px; letter-spacing: 0.02em; margin-top: 8px;">{{ mb_strtoupper($supplier['brand']) }}</div>
+                        <div class="label" style="margin-top: 3px;">{{ mb_strtoupper($supplier['name']) }}</div>
+                    @endif
+                </td>
+                <td style="width: 74%; border-left: 1px solid #E4E4E4; padding-left: 18px;">
+                    <div class="w7 dark" style="font-size: 16px;">Fresh Fruits &amp; Vegetables</div>
+                    <div class="w6 primary" style="font-size: 12px; margin: 3px 0 12px 0;">Quality. Freshness. Reliability.</div>
+                    @if ($supplier['email'])
+                        <div style="margin-bottom: 6px;">{!! $icon('envelope', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['email'] }}</span></div>
+                    @endif
+                    @if ($supplier['phone'])
+                        <div style="margin-bottom: 6px;">{!! $icon('phone', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['phone'] }}</span></div>
+                    @endif
+                    @if ($supplier['website'])
+                        <div>{!! $icon('globe', '#C32026', 15) !!} <span class="w5" style="vertical-align: 3px; color: #444;">{{ $supplier['website'] }}</span></div>
+                    @endif
+                </td>
+            </tr>
+        </table>
+    </div>
 
     {{-- ============================ SUPPLIER / BUYER / OFFER ============================ --}}
-    <table class="cards" style="margin-top: 16px;">
+    <table class="cards" style="margin-top: 18px;">
         <tr>
             {{-- SUPPLIER --}}
             <td class="card" style="width: 43%;">
                 <div style="margin-bottom: 10px;">{!! $icon('user', '#C32026', 16) !!} <span class="label" style="vertical-align: 3px;">SUPPLIER</span></div>
                 <table>
                     <tr>
-                        <td style="width: 54%; padding-right: 8px;">
-                            <div class="w7 dark" style="font-size: 15px; margin-bottom: 8px;">{{ mb_strtoupper($supplier['name']) }}</div>
+                        <td style="width: 52%; padding-right: 8px;">
+                            <div class="w7 dark" style="font-size: 14px; margin-bottom: 8px;">{{ mb_strtoupper($supplier['name']) }}</div>
                             <div style="margin-bottom: 3px;"><span class="muted">CIF:</span> <span class="w6">{{ $supplier['cif'] }}</span></div>
                             <div style="margin-bottom: 10px;"><span class="muted">Nr. Reg.:</span> <span class="w6">{{ $supplier['reg'] }}</span></div>
                             <div style="margin-bottom: 2px;">{!! $icon('pin', '#C32026', 13) !!} <span class="w6" style="vertical-align: 2px;">Address</span></div>
                             <div class="muted" style="font-size: 12px;">{{ $supplier['address'] }}</div>
-                            @if ($supplier['phone'])
-                                <div class="muted" style="font-size: 12px; margin-top: 3px;">{{ $supplier['phone'] }}</div>
-                            @endif
                         </td>
-                        <td style="width: 46%; padding-left: 8px;">
+                        <td style="width: 48%; padding-left: 8px;">
                             <div style="margin-bottom: 8px;">{!! $icon('bank', '#C32026', 14) !!} <span class="label" style="vertical-align: 2px;">BANK ACCOUNTS</span></div>
                             @forelse ($supplier['banks'] as $bank)
-                                <div class="w6" style="font-size: 11px;">{{ $bank['bank'] }}</div>
+                                <div class="w6" style="font-size: 11px;">{{ $bank['bank'] }}@if ($bank['currency']) <span class="muted">· {{ $bank['currency'] }}</span>@endif</div>
                                 <div class="muted" style="font-size: 10px; margin-bottom: 7px;">{{ $bank['iban'] }}</div>
                             @empty
                                 <div class="muted">-</div>
@@ -114,7 +126,7 @@
             {{-- BUYER --}}
             <td class="card" style="width: 35%;">
                 <div style="margin-bottom: 10px;">{!! $icon('user', '#C32026', 16) !!} <span class="label" style="vertical-align: 3px;">BUYER</span></div>
-                <div class="w7 dark" style="font-size: 15px; margin-bottom: 8px;">{{ mb_strtoupper($buyer['name']) }}</div>
+                <div class="w7 dark" style="font-size: 14px; margin-bottom: 8px;">{{ mb_strtoupper($buyer['name']) }}</div>
                 <div style="margin-bottom: 3px;"><span class="muted">CIF:</span> <span class="w6">{{ $buyer['cif'] }}</span></div>
                 <div style="margin-bottom: 7px;"><span class="muted">Nr. Reg.:</span> <span class="w6">{{ $buyer['reg'] }}</span></div>
                 <div style="margin-bottom: 2px;">{!! $icon('pin', '#C32026', 13) !!} <span class="muted" style="vertical-align: 2px;">{{ $buyer['address'] }}</span></div>
@@ -136,12 +148,12 @@
     </table>
 
     {{-- ============================ PRODUCTS ============================ --}}
-    <table class="items" style="margin-top: 16px;">
+    <table class="items" style="margin-top: 18px;">
         <thead>
             <tr>
                 <td style="width: 6%; text-align: center;">#</td>
-                <td style="width: 8%;"></td>
-                <td style="width: 34%;">Denumire produs</td>
+                @if ($hasProductImages)<td style="width: 8%;"></td>@endif
+                <td style="width: {{ $hasProductImages ? 34 : 42 }}%;">Denumire produs</td>
                 <td style="width: 8%; text-align: center;">UM</td>
                 <td style="width: 10%; text-align: center;">Cantitate</td>
                 <td style="width: 10%; text-align: center;">PU vânzare</td>
@@ -154,13 +166,15 @@
             @foreach ($items as $item)
                 <tr @class(['alt' => $loop->odd])>
                     <td style="text-align: center;"><span class="w7 primary" style="font-size: 15px;">{{ $item['nr'] }}</span></td>
-                    <td style="text-align: center;">
-                        @if ($item['image'])
-                            <img src="{{ $item['image'] }}" class="thumb" />
-                        @else
-                            <div class="thumb" style="background: #F3F3F3; border-radius: 10px;"></div>
-                        @endif
-                    </td>
+                    @if ($hasProductImages)
+                        <td style="text-align: center;">
+                            @if ($item['image'])
+                                <img src="{{ $item['image'] }}" class="thumb" />
+                            @else
+                                <div class="thumb" style="background: #F3F3F3; border-radius: 10px;"></div>
+                            @endif
+                        </td>
+                    @endif
                     <td>
                         <div class="w7 dark" style="font-size: 13px;">{{ mb_strtoupper($item['name']) }}</div>
                         @if ($item['description'] !== '')
@@ -193,13 +207,17 @@
                     </td>
                 </tr></table>
             </td>
-            <td style="width: 70%;">
-                <table style="text-align: center;">
+            <td style="width: 70%; vertical-align: middle;">
+                <table>
                     <tr>
-                        <td style="width: 25%; padding: 0 6px;">{!! $icon('leaf', '#C32026', 30) !!}<div class="w6 dark" style="font-size: 12px; margin-top: 6px;">Produse<br>Proaspete</div></td>
-                        <td class="divider" style="width: 25%; padding: 0 6px; border-left: 1px solid #ECECEC;">{!! $icon('shield', '#C32026', 30) !!}<div class="w6 dark" style="font-size: 12px; margin-top: 6px;">Calitate<br>Garantată</div></td>
-                        <td style="width: 25%; padding: 0 6px; border-left: 1px solid #ECECEC;">{!! $icon('truck', '#C32026', 30) !!}<div class="w6 dark" style="font-size: 12px; margin-top: 6px;">Livrare<br>Promptă</div></td>
-                        <td style="width: 25%; padding: 0 6px; border-left: 1px solid #ECECEC;">{!! $icon('users', '#C32026', 30) !!}<div class="w6 dark" style="font-size: 12px; margin-top: 6px;">Parteneriat<br>de Încredere</div></td>
+                        @foreach ([['leaf', 'Produse<br>Proaspete'], ['shield', 'Calitate<br>Garantată'], ['truck', 'Livrare<br>Promptă'], ['users', 'Parteneriat<br>de Încredere']] as $i => $benefit)
+                            <td style="width: 25%; padding: 0 6px; {{ $i > 0 ? 'border-left: 1px solid #ECECEC;' : '' }}">
+                                <table>
+                                    <tr><td style="text-align: center;">{!! $icon($benefit[0], '#C32026', 30) !!}</td></tr>
+                                    <tr><td class="w6 dark" style="text-align: center; font-size: 12px; padding-top: 6px;">{!! $benefit[1] !!}</td></tr>
+                                </table>
+                            </td>
+                        @endforeach
                     </tr>
                 </table>
             </td>
@@ -236,18 +254,6 @@
                     </td>
                 </tr></table>
             </td>
-        </tr>
-    </table>
-</div>
-
-{{-- ============================ FOOTER ============================ --}}
-<div class="footer-bar">
-    <table style="color: #ffffff;">
-        <tr>
-            <td style="width: 34%;">@if ($supplier['address'] !== '-'){!! $icon('pin', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['address'] }}</span>@endif</td>
-            <td style="width: 30%; text-align: center;">@if ($supplier['email']){!! $icon('envelope', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['email'] }}</span>@endif</td>
-            <td style="width: 18%; text-align: center;">@if ($supplier['phone']){!! $icon('phone', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['phone'] }}</span>@endif</td>
-            <td style="width: 18%; text-align: right;">@if ($supplier['website']){!! $icon('globe', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ preg_replace('#^https?://#', '', $supplier['website']) }}</span>@endif</td>
         </tr>
     </table>
 </div>

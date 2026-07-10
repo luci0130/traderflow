@@ -5,7 +5,7 @@ namespace App\Modules\CustomerOffers\Services;
 use App\Models\Tenant;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItem;
-use App\Modules\TenantSettings\Models\TenantSetting;
+use App\Modules\TenantSettings\Services\TenantBankAccounts;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
@@ -25,8 +25,8 @@ class CustomerOfferPdfExporter
     /** Brand red used throughout the document. */
     public const RED = '#C32026';
 
-    /** Tenant setting key holding the merchant's bank accounts (JSON array of {bank, iban}). */
-    public const BANK_ACCOUNTS_SETTING = 'offer_bank_accounts';
+    /** Tenant setting key holding the merchant's bank accounts. */
+    public const BANK_ACCOUNTS_SETTING = TenantBankAccounts::KEY;
 
     /** Folder (under public/) where drop-in offer images live. */
     public const ASSET_DIR = 'images/offer-pdf';
@@ -57,7 +57,10 @@ class CustomerOfferPdfExporter
             'margin_left' => 0,
             'margin_right' => 0,
             'margin_top' => 0,
-            'margin_bottom' => 0,
+            // Reserve space for the red footer bar, which is pinned to the bottom
+            // of every page via an mpdf page footer in the template.
+            'margin_bottom' => 20,
+            'margin_footer' => 0,
             // Inter, embedded as selectable/searchable text. Separate families give
             // per-weight control (mpdf only exposes R/B per family).
             'fontDir' => array_merge($fontDirs, [resource_path('fonts/inter')]),
@@ -92,6 +95,7 @@ class CustomerOfferPdfExporter
             'items.product.category',
             'items.supplierProduct',
             'items.unit',
+            'items.suppliers',
         ]);
 
         $tenant = $offer->tenant;
@@ -114,7 +118,7 @@ class CustomerOfferPdfExporter
                 'email' => $tenant?->email ?: null,
                 'website' => $tenant?->website ?: null,
                 'logo' => $this->logoPath($tenant),
-                'banks' => $this->bankAccounts($tenant),
+                'banks' => $tenant !== null ? TenantBankAccounts::get($tenant) : [],
             ],
             'buyer' => [
                 'name' => $customer?->legal_name ?: ($customer?->name ?? '-'),
@@ -131,12 +135,15 @@ class CustomerOfferPdfExporter
             'offerDate' => $offer->offer_date?->format('d.m.Y') ?? '-',
             'currency' => $currency,
             'items' => $items,
+            // Only show the photo column when at least one line actually has one,
+            // so offers without product images don't carry an empty column.
+            'hasProductImages' => collect($items)->contains(fn (array $item): bool => $item['image'] !== null),
             'total' => $this->number($this->resolveTotal($offer)),
             'notes' => $this->notes($offer),
             'qr' => $tenant?->website ?: config('app.url'),
             // Drop-in header/footer artwork; falls back to the bundled banner.
-            'banner' => $this->assetImage('banner') ?? public_path(self::ASSET_DIR.'/banner.png'),
-            'signature' => $this->assetImage('signature'),
+            'banner' => $this->pdfSafeImage($this->assetImage('banner') ?? public_path(self::ASSET_DIR.'/banner.png')),
+            'signature' => ($signature = $this->assetImage('signature')) !== null ? $this->pdfSafeImage($signature) : null,
         ];
     }
 
@@ -152,9 +159,9 @@ class CustomerOfferPdfExporter
             filled($supplierProduct?->caliber) ? __('calibru').' '.$supplierProduct->caliber : null,
         ])->filter()->implode(', ');
 
-        $quantity = (float) $item->quantity;
+        $quantity = $this->securedQuantity($item);
         $price = (float) $item->sale_price;
-        $value = $item->line_total !== null ? (float) $item->line_total : $quantity * $price;
+        $value = $quantity * $price;
 
         return [
             'nr' => $index + 1,
@@ -170,16 +177,22 @@ class CustomerOfferPdfExporter
         ];
     }
 
+    /**
+     * The offered quantity for a line: the total secured across its chosen
+     * suppliers (what the offer commits to), falling back to the desired
+     * quantity when nothing has been sourced yet.
+     */
+    private function securedQuantity(CustomerOfferItem $item): float
+    {
+        $secured = $item->totalSecuredQuantity();
+
+        return $secured > 0 ? $secured : (float) $item->quantity;
+    }
+
     private function resolveTotal(CustomerOffer $offer): float
     {
-        if ($offer->total !== null && (float) $offer->total > 0) {
-            return (float) $offer->total;
-        }
-
         return (float) $offer->items->sum(
-            fn (CustomerOfferItem $item): float => $item->line_total !== null
-                ? (float) $item->line_total
-                : (float) $item->quantity * (float) $item->sale_price,
+            fn (CustomerOfferItem $item): float => $this->securedQuantity($item) * (float) $item->sale_price,
         );
     }
 
@@ -204,29 +217,65 @@ class CustomerOfferPdfExporter
         $product = $item->product;
 
         if ($product !== null) {
-            return $this->assetImage('products/'.Str::slug((string) $product->name))
+            $drop = $this->assetImage('products/'.Str::slug((string) $product->name))
                 ?? $this->assetImage('products/'.$product->getKey());
+
+            if ($drop !== null) {
+                return $drop;
+            }
         }
 
         return null;
     }
 
     /**
-     * The merchant logo: the tenant's uploaded logo, else a drop-in file at
-     * public/images/offer-pdf/logo.{ext}, else null (the template draws a
-     * monogram).
+     * The merchant logo uploaded on the tenant (checked on both the public and the
+     * default upload disk), else a drop-in file at public/images/offer-pdf/logo.*,
+     * else null (the template draws a monogram). SVG logos are rasterised so mpdf
+     * embeds them cleanly.
      */
     private function logoPath(?Tenant $tenant): ?string
     {
         if ($tenant !== null && filled($tenant->logo)) {
-            $disk = Storage::disk('public');
+            foreach (['public', config('filament.default_filesystem_disk', 'local')] as $diskName) {
+                $disk = Storage::disk($diskName);
 
-            if ($disk->exists($tenant->logo)) {
-                return $disk->path($tenant->logo);
+                if ($disk->exists($tenant->logo)) {
+                    return $this->pdfSafeImage($disk->path($tenant->logo));
+                }
             }
         }
 
-        return $this->assetImage('logo');
+        $asset = $this->assetImage('logo');
+
+        return $asset !== null ? $this->pdfSafeImage($asset) : null;
+    }
+
+    /**
+     * Returns a path mpdf can embed safely. SVG sources corrupt mpdf's colour
+     * state, so they are rasterised to a temporary PNG via imagick; other formats
+     * pass through unchanged.
+     */
+    private function pdfSafeImage(string $absolutePath): string
+    {
+        if (strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION)) !== 'svg' || ! extension_loaded('imagick')) {
+            return $absolutePath;
+        }
+
+        try {
+            $imagick = new \Imagick;
+            $imagick->setBackgroundColor(new \ImagickPixel('transparent'));
+            $imagick->readImage($absolutePath);
+            $imagick->setImageFormat('png');
+
+            $png = tempnam(sys_get_temp_dir(), 'offimg_').'.png';
+            $imagick->writeImage($png);
+            $imagick->clear();
+
+            return $png;
+        } catch (\Throwable) {
+            return $absolutePath;
+        }
     }
 
     /**
@@ -244,43 +293,6 @@ class CustomerOfferPdfExporter
         }
 
         return null;
-    }
-
-    /**
-     * The merchant's bank accounts, stored as a JSON tenant setting so they can be
-     * configured per merchant without a schema change.
-     *
-     * @return array<int, array{bank: string, iban: string}>
-     */
-    private function bankAccounts(?Tenant $tenant): array
-    {
-        if ($tenant === null) {
-            return [];
-        }
-
-        $raw = TenantSetting::query()
-            ->where('tenant_id', $tenant->getKey())
-            ->where('key', self::BANK_ACCOUNTS_SETTING)
-            ->value('value');
-
-        if (blank($raw)) {
-            return [];
-        }
-
-        $decoded = json_decode((string) $raw, true);
-
-        if (! is_array($decoded)) {
-            return [];
-        }
-
-        return collect($decoded)
-            ->map(fn ($entry): array => [
-                'bank' => (string) ($entry['bank'] ?? ''),
-                'iban' => (string) ($entry['iban'] ?? ''),
-            ])
-            ->filter(fn (array $entry): bool => $entry['bank'] !== '' || $entry['iban'] !== '')
-            ->values()
-            ->all();
     }
 
     /**
