@@ -40,15 +40,33 @@ class AdminPanelProvider extends PanelProvider
             ->path('')
             ->login()
             ->navigationGroups([
-                __('Dashboard'),
-                __('Entities'),
-                __('Catalog'),
-                __('Purchasing'),
-                __('Sales'),
-                __('Analytics'),
-                __('Reports'),
-                __('Supermarkets'),
+                // Every entry must be a NavigationGroup object: Filament only
+                // honours the configured group order when the first element is
+                // a NavigationGroup (see NavigationManager). A bare string here
+                // silently falls back to discovery order.
+                NavigationGroup::make(__('Entities'))
+                    ->icon(Heroicon::OutlinedBuildingOffice2)
+                    ->collapsed(),
+                NavigationGroup::make(__('Catalog'))
+                    ->icon(Heroicon::OutlinedRectangleStack)
+                    ->collapsed(),
+                NavigationGroup::make(__('Purchasing'))
+                    ->icon(Heroicon::OutlinedShoppingCart)
+                    ->collapsed(),
+                NavigationGroup::make(__('Sales'))
+                    ->icon(Heroicon::OutlinedBanknotes)
+                    ->collapsed(),
+                NavigationGroup::make(__('Analytics'))
+                    ->icon(Heroicon::OutlinedChartBar)
+                    ->collapsed(),
+                NavigationGroup::make(__('Reports'))
+                    ->icon(Heroicon::OutlinedDocumentChartBar)
+                    ->collapsed(),
+                NavigationGroup::make(__('Supermarkets'))
+                    ->icon(Heroicon::OutlinedBuildingStorefront)
+                    ->collapsed(),
                 NavigationGroup::make(__('Administration'))
+                    ->icon(Heroicon::OutlinedCog6Tooth)
                     ->collapsed(),
             ])
             ->userMenuItems([
@@ -122,6 +140,7 @@ class AdminPanelProvider extends PanelProvider
                 ->viteTheme('resources/css/filament/admin/theme.css')
                 ->assets([
                     Js::make('chart-js-plugins', Vite::asset('resources/js/filament-chart-js-plugins.js'))->module(),
+                    Js::make('sidebar-accordion', Vite::asset('resources/js/filament-sidebar-accordion.js'))->module(),
                 ]);
         }
 

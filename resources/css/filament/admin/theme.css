@@ -12,6 +12,55 @@
  * the threshold for that specific repeater so its row (Min qty / Price / delete)
  * stays on a single line in the right column.
  */
+/*
+ * Sidebar navigation groups: give each group header a pill that highlights when
+ * the group is selected (expanded) or holds the active page, and indent the
+ * items beneath a vertical guide line so it reads as a nested submenu.
+ */
+
+/* Tighten the (default 1.75rem) vertical gap between navigation groups. */
+.fi-main-sidebar .fi-sidebar-nav-groups {
+    @apply gap-y-1;
+}
+
+.fi-main-sidebar .fi-sidebar-group-btn {
+    @apply rounded-lg transition duration-75;
+}
+
+/* Hover affordance on collapsible group headers. */
+.fi-main-sidebar .fi-sidebar-group.fi-collapsible > .fi-sidebar-group-btn:hover {
+    @apply bg-gray-100 dark:bg-white/5;
+}
+
+/* Selected group (expanded): soft primary pill with a primary icon + label. */
+.fi-main-sidebar .fi-sidebar-group:not(.fi-collapsed) > .fi-sidebar-group-btn {
+    @apply bg-primary-50 dark:bg-primary-400/10;
+}
+
+.fi-main-sidebar .fi-sidebar-group:not(.fi-collapsed) > .fi-sidebar-group-btn > .fi-icon,
+.fi-main-sidebar .fi-sidebar-group:not(.fi-collapsed) > .fi-sidebar-group-btn > .fi-sidebar-group-label {
+    @apply text-primary-600 dark:text-primary-400;
+}
+
+/* Group holding the current page keeps the accent even while collapsed. */
+.fi-main-sidebar .fi-sidebar-group.fi-active > .fi-sidebar-group-btn > .fi-icon,
+.fi-main-sidebar .fi-sidebar-group.fi-active > .fi-sidebar-group-btn > .fi-sidebar-group-label {
+    @apply text-primary-600 dark:text-primary-400;
+}
+
+/*
+ * Indent the group's items and draw a vertical guide line, aligned roughly
+ * under the centre of the group icon (p-2 + half of a size-6 icon ≈ 1.25rem).
+ */
+.fi-main-sidebar .fi-sidebar-nav-groups > .fi-sidebar-group > .fi-sidebar-group-items {
+    @apply ms-5 ps-3 border-s border-gray-200 dark:border-white/10;
+}
+
+/* Tint the guide line while its group is selected, to reinforce the grouping. */
+.fi-main-sidebar .fi-sidebar-group:not(.fi-collapsed) > .fi-sidebar-group-items {
+    @apply border-primary-200 dark:border-primary-400/30;
+}
+
 @container (min-width: 27rem) {
     .fi-tiered-pricing-table.fi-fo-table-repeater > table {
         display: table;

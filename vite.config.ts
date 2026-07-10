@@ -15,6 +15,7 @@ export default defineConfig({
                 'resources/css/filament/producer/theme.css',
                 'resources/js/app.tsx',
                 'resources/js/filament-chart-js-plugins.js',
+                'resources/js/filament-sidebar-accordion.js',
                 'resources/js/filament-tours.js',
             ],
             refresh: true,

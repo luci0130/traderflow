@@ -38,7 +38,7 @@ class SupplierResource extends Resource
 {
     protected static ?string $model = Supplier::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice;
 
     protected static string|UnitEnum|null $navigationGroup = 'Entities';
 
