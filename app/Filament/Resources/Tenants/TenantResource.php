@@ -12,6 +12,7 @@ use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -116,6 +117,36 @@ class TenantResource extends Resource
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
+                Section::make(__('Bank accounts'))
+                    ->description(__('Listed in the SUPPLIER block of generated offers.'))
+                    ->schema([
+                        Repeater::make('bank_accounts')
+                            ->hiddenLabel()
+                            ->addActionLabel(__('Add bank account'))
+                            ->reorderable()
+                            ->defaultItems(0)
+                            // Stored as a JSON tenant setting, not a column: the
+                            // Create/Edit pages load it on fill and strip it out of
+                            // the model data on save (see their mutate hooks).
+                            ->schema([
+                                TextInput::make('bank')
+                                    ->label(__('Bank'))
+                                    ->maxLength(255),
+                                TextInput::make('iban')
+                                    ->label('IBAN')
+                                    ->maxLength(255),
+                                Select::make('currency')
+                                    ->label(__('Currency'))
+                                    ->options([
+                                        'RON' => 'RON',
+                                        'EUR' => 'EUR',
+                                        'USD' => 'USD',
+                                        'GBP' => 'GBP',
+                                    ])
+                                    ->default('RON'),
+                            ])
+                            ->columns(3),
+                    ]),
             ]);
     }
 
