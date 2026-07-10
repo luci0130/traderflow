@@ -8,6 +8,8 @@
     $showSupermarket = $lines->isNotEmpty() && array_key_exists('supermarket', $lines->first());
     $showMargin = $showMargin ?? false;
     $margins = $margins ?? [];
+    $units = $units ?? [];
+    $unitOptions = $unitOptions ?? [];
     $saleMode = $saleMode ?? \App\Modules\MarketComparison\Services\SupermarketOfferBuilder::SALE_FROM_PERCENTAGE;
     $isFixedMargin = $saleMode === \App\Modules\MarketComparison\Services\SupermarketOfferBuilder::SALE_FROM_FIXED;
 @endphp
@@ -71,14 +73,30 @@
                             @endif
                             <td class="px-3 py-2 text-gray-900 dark:text-white">
                                 @if ($line['has_supplier'])
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        @if ($line['quantity_available'] !== null) max="{{ $line['quantity_available'] }}" @endif
-                                        wire:model="offerQuantities.{{ $line['canonical_id'] }}"
-                                        class="fi-input block w-24 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                                    />
+                                    <div class="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            @if ($line['quantity_available'] !== null) max="{{ $line['quantity_available'] }}" @endif
+                                            wire:model="offerQuantities.{{ $line['canonical_id'] }}"
+                                            class="fi-input h-9 w-24 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                                        />
+                                        <div class="relative w-24">
+                                            <select
+                                                wire:model="offerUnits.{{ $line['canonical_id'] }}"
+                                                class="fi-input h-9 w-full appearance-none rounded-lg border-gray-300 pl-3 pr-8 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                                            >
+                                                @foreach ($unitOptions as $unitId => $unitSymbol)
+                                                    <option value="{{ $unitId }}">{{ $unitSymbol }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-filament::icon
+                                                icon="heroicon-m-chevron-down"
+                                                class="pointer-events-none absolute inset-y-0 right-2 my-auto h-4 w-4 text-gray-400"
+                                            />
+                                        </div>
+                                    </div>
                                     @if ($line['quantity_available'] !== null)
                                         <span class="mt-1 block text-xs text-gray-400">
                                             {{ __('Max :qty', ['qty' => number_format((float) $line['quantity_available'], 2)]) }}
@@ -183,14 +201,30 @@
                             @endif
                             <td class="px-3 py-2 text-gray-900 dark:text-white">
                                 @if ($line['has_supplier'])
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        @if ($line['quantity_available'] !== null) max="{{ $line['quantity_available'] }}" @endif
-                                        wire:model="offerQuantities.{{ $line['canonical_id'] }}"
-                                        class="fi-input block w-24 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                                    />
+                                    <div class="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            @if ($line['quantity_available'] !== null) max="{{ $line['quantity_available'] }}" @endif
+                                            wire:model="offerQuantities.{{ $line['canonical_id'] }}"
+                                            class="fi-input h-9 w-24 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                                        />
+                                        <div class="relative w-24">
+                                            <select
+                                                wire:model="offerUnits.{{ $line['canonical_id'] }}"
+                                                class="fi-input h-9 w-full appearance-none rounded-lg border-gray-300 pl-3 pr-8 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                                            >
+                                                @foreach ($unitOptions as $unitId => $unitSymbol)
+                                                    <option value="{{ $unitId }}">{{ $unitSymbol }}</option>
+                                                @endforeach
+                                            </select>
+                                            <x-filament::icon
+                                                icon="heroicon-m-chevron-down"
+                                                class="pointer-events-none absolute inset-y-0 right-2 my-auto h-4 w-4 text-gray-400"
+                                            />
+                                        </div>
+                                    </div>
                                     @if ($line['quantity_available'] !== null)
                                         <span class="mt-1 block text-xs text-gray-400">
                                             {{ __('Max :qty', ['qty' => number_format((float) $line['quantity_available'], 2)]) }}

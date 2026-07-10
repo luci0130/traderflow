@@ -21,7 +21,7 @@
                     <thead>
                         <tr class="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                             <th class="py-1 pr-3 font-medium">{{ __('Supermarket') }}</th>
-                            <th class="py-1 pr-3 font-medium">{{ __('Price') }}</th>
+                            <th class="py-1 pr-3 font-medium">{{ __('Price excl. VAT') }}</th>
                             <th class="py-1 pr-3 font-medium">{{ __('Observed') }}</th>
                         </tr>
                     </thead>
@@ -30,7 +30,7 @@
                             <tr>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">{{ $supermarket['name'] ?? '-' }}</td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
-                                    {{ number_format((float) $supermarket['gross_price'], 2) }} {{ $supermarket['currency'] }}
+                                    {{ number_format((float) ($supermarket['price_excl_vat'] ?? $supermarket['gross_price']), 2) }} {{ $supermarket['currency'] }}
                                     @if ($supermarket['is_promo']) <span class="text-warning-600">★</span> @endif
                                 </td>
                                 <td class="py-1 pr-3 text-gray-500 dark:text-gray-400">{{ $supermarket['observed_at'] ?? '-' }}</td>

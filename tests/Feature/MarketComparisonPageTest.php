@@ -21,6 +21,7 @@ use App\Modules\Supermarkets\Models\SupermarketPrice;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
 use App\Modules\SupplierOffers\Models\SupplierOffer;
 use App\Modules\Suppliers\Models\Supplier;
+use App\Modules\Units\Models\Unit;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -200,6 +201,80 @@ class MarketComparisonPageTest extends TestCase
         $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
         (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
         $this->assertArrayNotHasKey($canonical->id, $page->offerQuantities);
+    }
+
+    public function test_units_seed_kilograms_by_default_and_drop_unselected_products(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        session(['tenant_id' => $tenant->id]);
+        $this->actingAs(User::factory()->create());
+
+        $kg = Unit::create(['tenant_id' => null, 'name' => 'Kilogram', 'symbol' => 'kg']);
+        $tonne = Unit::create(['tenant_id' => null, 'name' => 'Tonă', 'symbol' => 't']);
+
+        $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
+
+        $page = app(MarketComparison::class);
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
+
+        // Rendering the modal footer seeds the default unit (kilograms).
+        (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
+        $this->assertSame($kg->id, $page->offerUnits[$canonical->id]);
+
+        // A user choice is preserved across re-renders.
+        $page->offerUnits[$canonical->id] = $tonne->id;
+        (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
+        $this->assertSame($tonne->id, $page->offerUnits[$canonical->id]);
+
+        // Deselecting the product drops its unit entry.
+        $page->toggleSupplierPriority($canonical->id, $page->bestSupplierProductId($canonical));
+        (new \ReflectionMethod($page, 'offerSelectionFooter'))->invoke($page);
+        $this->assertArrayNotHasKey($canonical->id, $page->offerUnits);
+    }
+
+    public function test_offer_built_through_livewire_stores_the_selected_unit(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+        $supermarket = Customer::create(['name' => 'Auchan', 'tenant_id' => null]);
+
+        $this->actingAs($user);
+        setPermissionsTeamId($tenant->getKey());
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+
+        $kg = Unit::create(['tenant_id' => null, 'name' => 'Kilogram', 'symbol' => 'kg']);
+        $tonne = Unit::create(['tenant_id' => null, 'name' => 'Tonă', 'symbol' => 't']);
+
+        $canonical = $this->canonicalWithPrices(supplierLanded: 6.0, supermarketGross: 9.0);
+
+        // Defaults to kilograms when the reviewer leaves the selector untouched.
+        Livewire::test(MarketComparison::class)
+            ->call('toggleProductSelection', $canonical->id, SupplierProduct::query()->value('id'))
+            ->callAction('createSupermarketOffer', data: [
+                'customer_id' => $supermarket->id,
+                'currency' => 'RON',
+                'sale_mode' => SupermarketOfferBuilder::SALE_FROM_SUPERMARKET,
+            ])
+            ->assertHasNoActionErrors();
+
+        $item = CustomerOffer::query()->latest('id')->first()?->items->first();
+        $this->assertNotNull($item);
+        $this->assertSame($kg->id, $item->unit_id);
+
+        // An explicitly chosen unit is honoured.
+        Livewire::test(MarketComparison::class)
+            ->call('toggleProductSelection', $canonical->id, SupplierProduct::query()->value('id'))
+            ->set("offerUnits.{$canonical->id}", $tonne->id)
+            ->callAction('createSupermarketOffer', data: [
+                'customer_id' => $supermarket->id,
+                'currency' => 'RON',
+                'sale_mode' => SupermarketOfferBuilder::SALE_FROM_SUPERMARKET,
+            ])
+            ->assertHasNoActionErrors();
+
+        $item = CustomerOffer::query()->latest('id')->first()?->items->first();
+        $this->assertSame($tonne->id, $item->unit_id);
     }
 
     public function test_offer_built_through_livewire_honours_the_edited_quantity(): void
@@ -1104,6 +1179,50 @@ class MarketComparisonPageTest extends TestCase
         $canonical->supplierProducts()->attach($product);
 
         return $product;
+    }
+
+    public function test_supermarket_breakdown_shows_the_price_excluding_vat(): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+        $this->actingAs($user);
+        setPermissionsTeamId($tenant->getKey());
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+
+        $supplier = Supplier::create(['name' => 'Ferma Verde SRL']);
+        SupplierCostDefault::create(['supplier_id' => $supplier->id, 'transport_cost' => 1]);
+        $supplierProduct = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => 'Portocale Navel',
+            'status' => 'active',
+            'unit_price' => 5,
+            'currency' => 'RON',
+            'quantity_available' => 100,
+        ]);
+        $canonical->supplierProducts()->attach($supplierProduct);
+
+        $supermarketProduct = SupermarketProduct::factory()->create(['name' => 'Portocale plasa', 'vat_rate' => 19]);
+        $canonical->supermarketProducts()->attach($supermarketProduct);
+
+        $auchan = Customer::create(['name' => 'Auchan store', 'tenant_id' => null]);
+        SupermarketPrice::create([
+            'supermarket_id' => $auchan->id,
+            'supermarket_product_id' => $supermarketProduct->id,
+            'price' => 11.90,
+            'currency' => 'RON',
+            'observed_at' => today(),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+
+        // 11.90 gross at 19% VAT resolves to 10.00 excl. VAT; the breakdown must
+        // show the net price under the "Price excl. VAT" column, not the gross.
+        Livewire::test(MarketComparison::class)
+            ->call('toggleBreakdown', $canonical->id)
+            ->assertSee('Price excl. VAT')
+            ->assertSee('10.00 RON');
     }
 
     private function canonicalWithPrices(float $supplierLanded, float $supermarketGross): CanonicalProduct

@@ -8,6 +8,7 @@ use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Services\SupermarketOfferBuilder;
 use App\Modules\NumberSequences\Services\NumberSequenceGenerator;
+use App\Modules\Units\Models\Unit;
 use Carbon\CarbonInterface;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -33,6 +34,14 @@ trait CreatesCustomerOfferFromSelection
      * @var array<int, float|int|string|null>
      */
     public array $offerQuantities = [];
+
+    /**
+     * Unit of measure per selected canonical product, defaulting to kilograms and
+     * editable in the offer modal. Keyed canonicalProductId => unit id.
+     *
+     * @var array<int, int|string|null>
+     */
+    public array $offerUnits = [];
 
     /**
      * Margin value per selected canonical product, defaulting to the offer-level
@@ -89,6 +98,7 @@ trait CreatesCustomerOfferFromSelection
         $lines = $this->offerSelectionLines($this->selectedCanonicalProducts());
 
         $this->syncOfferQuantities($lines);
+        $this->syncOfferUnits($lines);
         $this->syncOfferMargins($lines);
 
         // Margin editing has moved off this modal (set later on the offer), so the
@@ -96,9 +106,30 @@ trait CreatesCustomerOfferFromSelection
         return view('filament.components.offer-selection', [
             'lines' => $lines,
             'margins' => $this->offerMargins,
+            'units' => $this->offerUnits,
+            'unitOptions' => $this->offerUnitOptions(),
             'saleMode' => $this->offerSaleMode,
             'showMargin' => false,
         ]);
+    }
+
+    /**
+     * The units offered as the quantity's unit of measure, keyed id => symbol
+     * (e.g. "kg") so the modal shows a compact selector next to each quantity.
+     *
+     * @return array<int, string>
+     */
+    protected function offerUnitOptions(): array
+    {
+        return Unit::query()->orderBy('name')->pluck('symbol', 'id')->all();
+    }
+
+    /**
+     * The unit selected by default for a new offer line: kilograms.
+     */
+    protected function defaultOfferUnitId(): ?int
+    {
+        return Unit::query()->where('symbol', 'kg')->value('id');
     }
 
     /**
@@ -138,6 +169,30 @@ trait CreatesCustomerOfferFromSelection
         }
 
         $this->offerQuantities = array_intersect_key($this->offerQuantities, array_flip($selectedIds));
+    }
+
+    /**
+     * Seed the default unit (kilograms) for newly selected products and drop units
+     * for products no longer selected, while preserving any unit the user has
+     * already picked.
+     *
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    protected function syncOfferUnits(array $lines): void
+    {
+        $selectedIds = [];
+        $defaultUnitId = $this->defaultOfferUnitId();
+
+        foreach ($lines as $line) {
+            $canonicalId = $line['canonical_id'];
+            $selectedIds[] = $canonicalId;
+
+            if (! array_key_exists($canonicalId, $this->offerUnits)) {
+                $this->offerUnits[$canonicalId] = $defaultUnitId;
+            }
+        }
+
+        $this->offerUnits = array_intersect_key($this->offerUnits, array_flip($selectedIds));
     }
 
     /**
@@ -271,9 +326,11 @@ trait CreatesCustomerOfferFromSelection
             supplierPriorities: $supplierPriorities,
             quantities: $this->offerQuantities,
             margins: $this->offerMargins,
+            units: $this->offerUnits,
         );
 
         $this->offerQuantities = [];
+        $this->offerUnits = [];
         $this->offerMargins = [];
         $this->offerMarginValue = 0;
         $this->offerSaleMode = SupermarketOfferBuilder::SALE_FROM_PERCENTAGE;

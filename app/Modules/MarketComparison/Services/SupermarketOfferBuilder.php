@@ -51,6 +51,7 @@ class SupermarketOfferBuilder
      * @param  array<int, int>  $supermarketOverrides  canonicalProductId => supermarketPriceId
      * @param  array<int, float|int|string|null>  $quantities  canonicalProductId => offered quantity (defaults to the supplier's available quantity)
      * @param  array<int, float|int|string|null>  $margins  canonicalProductId => per-product margin value (defaults to the offer-level margin)
+     * @param  array<int, int|string|null>  $units  canonicalProductId => unit of measure id (defaults to kilograms)
      */
     public function build(
         Collection $canonicalProducts,
@@ -60,8 +61,9 @@ class SupermarketOfferBuilder
         array $supermarketOverrides = [],
         array $quantities = [],
         array $margins = [],
+        array $units = [],
     ): CustomerOffer {
-        return DB::transaction(function () use ($canonicalProducts, $data, $tenantId, $supplierPriorities, $supermarketOverrides, $quantities, $margins): CustomerOffer {
+        return DB::transaction(function () use ($canonicalProducts, $data, $tenantId, $supplierPriorities, $supermarketOverrides, $quantities, $margins, $units): CustomerOffer {
             $customer = Customer::query()
                 ->visibleToTenant($tenantId)
                 ->findOrFail($data['customer_id']);
@@ -109,6 +111,8 @@ class SupermarketOfferBuilder
                 );
                 $product = $this->resolveTenantProduct($canonicalProduct, $tenantId);
 
+                $unitId = $units[$canonicalProduct->getKey()] ?? null;
+
                 $item = $this->createItem(
                     $customerOffer,
                     $supplierCandidate,
@@ -118,6 +122,7 @@ class SupermarketOfferBuilder
                     $this->resolveMargin($margins[$canonicalProduct->getKey()] ?? null, $marginInput),
                     $tenantId,
                     $quantity,
+                    filled($unitId) ? (int) $unitId : null,
                 );
 
                 $this->attachSuppliers($item, $orderedCandidates);
@@ -136,6 +141,7 @@ class SupermarketOfferBuilder
         float $marginInput,
         ?int $tenantId,
         ?float $quantity,
+        ?int $unitId,
     ): CustomerOfferItem {
         $purchasePrice = $supplierCandidate->landedCost;
         $salePrice = $this->resolveSalePrice($supplierCandidate, $supermarketCandidate, $saleMode, $marginInput);
@@ -147,7 +153,7 @@ class SupermarketOfferBuilder
             'supplier_id' => $supplierCandidate->supplierProduct->producer_id,
             'supplier_product_id' => $supplierCandidate->supplierProduct->getKey(),
             'supplier_offer_item_id' => null,
-            'unit_id' => null,
+            'unit_id' => $unitId,
             'quantity' => $quantity,
             'purchase_price' => $purchasePrice,
             'sale_price' => $salePrice,
