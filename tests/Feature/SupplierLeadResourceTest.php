@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use App\Models\User;
+use App\Modules\Supermarkets\Models\SupermarketProduct;
 use App\Modules\Suppliers\Filament\Resources\SupplierLeads\Pages\CreateSupplierLead;
 use App\Modules\Suppliers\Filament\Resources\SupplierLeads\Pages\ListSupplierLeads;
 use App\Modules\Suppliers\Models\Supplier;
@@ -58,6 +59,25 @@ class SupplierLeadResourceTest extends TestCase
 
         $this->assertDatabaseHas('supplier_leads', [
             'name' => 'Agro Banat SRL',
+            'created_by' => $this->user->id,
+        ]);
+    }
+
+    public function test_a_lead_can_be_linked_to_a_supermarket_product(): void
+    {
+        $product = SupermarketProduct::factory()->create();
+
+        Livewire::test(CreateSupplierLead::class)
+            ->fillForm([
+                'name' => 'Rosii de Buzau SRL',
+                'supermarket_product_id' => $product->id,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('supplier_leads', [
+            'name' => 'Rosii de Buzau SRL',
+            'supermarket_product_id' => $product->id,
             'created_by' => $this->user->id,
         ]);
     }

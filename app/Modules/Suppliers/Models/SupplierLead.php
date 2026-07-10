@@ -3,6 +3,7 @@
 namespace App\Modules\Suppliers\Models;
 
 use App\Models\User;
+use App\Modules\Supermarkets\Models\SupermarketProduct;
 use Database\Factories\SupplierLeadFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,7 @@ class SupplierLead extends Model
         'phone',
         'notes',
         'created_by',
+        'supermarket_product_id',
         'converted_supplier_id',
         'converted_at',
     ];
@@ -40,6 +42,11 @@ class SupplierLead extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function supermarketProduct(): BelongsTo
+    {
+        return $this->belongsTo(SupermarketProduct::class);
     }
 
     public function convertedSupplier(): BelongsTo

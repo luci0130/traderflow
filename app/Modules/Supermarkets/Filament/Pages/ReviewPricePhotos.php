@@ -71,6 +71,13 @@ class ReviewPricePhotos extends Page implements HasForms
      */
     public ?array $data = [];
 
+    /**
+     * The photo the currently cached content/form schemas were built for. Used
+     * to detect when the reviewer has advanced to a different photo within the
+     * same request (see {@see rendering()}).
+     */
+    protected ?int $renderedPhotoId = null;
+
     public function mount(): void
     {
         $this->loadNextPhoto();
@@ -125,6 +132,7 @@ class ReviewPricePhotos extends Page implements HasForms
                 'email' => $get('email'),
                 'phone' => $get('phone'),
                 'notes' => $get('notes'),
+                'supermarket_product_id' => $get('supermarket_product_id'),
             ];
         };
 
@@ -136,8 +144,21 @@ class ReviewPricePhotos extends Page implements HasForms
             ->modalHeading(__('Add supplier lead'))
             ->modalDescription(__('Save the contact details of a potential supplier. This is only a lead; whoever contacts them turns it into a supplier.'))
             ->closeModalByClickingAway(false)
-            ->fillForm(fn (): array => $this->supplierLeadDraft)
+            // Default the linked product to the one being reviewed in the photo,
+            // unless the reviewer already picked (or cleared) one in the draft.
+            ->fillForm(fn (): array => [
+                ...$this->supplierLeadDraft,
+                'supermarket_product_id' => $this->supplierLeadDraft['supermarket_product_id'] ?? $this->reviewedProductId(),
+            ])
             ->schema([
+                Select::make('supermarket_product_id')
+                    ->label(__('Product'))
+                    ->helperText(__('The supermarket product this potential supplier could provide.'))
+                    ->placeholder(__('Select a product'))
+                    ->options(fn (): array => SupermarketProduct::query()->orderBy('name')->pluck('name', 'id')->all())
+                    ->searchable()
+                    ->live()
+                    ->afterStateUpdated($rememberDraft),
                 TextInput::make('name')
                     ->label(__('Name'))
                     ->required()
@@ -180,6 +201,7 @@ class ReviewPricePhotos extends Page implements HasForms
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
                     'notes' => $data['notes'] ?? null,
+                    'supermarket_product_id' => $data['supermarket_product_id'] ?? null,
                     'created_by' => auth()->id(),
                 ]);
 
@@ -201,11 +223,9 @@ class ReviewPricePhotos extends Page implements HasForms
             : null;
     }
 
-    public function getPhotoUrlProperty(): ?string
+    protected function photoUrl(SupermarketPricePhoto $photo): string
     {
-        $photo = $this->currentPhoto();
-
-        return $photo ? Storage::disk('public')->url($photo->path) : null;
+        return Storage::disk('public')->url($photo->path);
     }
 
     protected function loadNextPhoto(): void
@@ -234,8 +254,28 @@ class ReviewPricePhotos extends Page implements HasForms
         ]);
     }
 
+    /**
+     * The content schema (photo preview) and its embedded form schema are cached
+     * per request, bound to the photo they were built for. Advancing to another
+     * photo within the same request (save/skip/delete) updates the component
+     * state but, for the form-submit "save" flow, Filament re-caches those
+     * schemas against the previous photo while handling the submit — so the
+     * action's closing render would keep showing it. Dropping the caches right
+     * before rendering, once the photo has changed, forces a rebuild from the
+     * fresh state.
+     */
+    public function rendering(): void
+    {
+        if ($this->hasCachedSchema('content') && $this->renderedPhotoId !== $this->photoId) {
+            $this->cacheSchema('form', null);
+            $this->cacheSchema('content', null);
+        }
+    }
+
     public function content(Schema $schema): Schema
     {
+        $this->renderedPhotoId = $this->photoId;
+
         $photo = $this->currentPhoto();
 
         if ($photo === null) {
@@ -249,7 +289,7 @@ class ReviewPricePhotos extends Page implements HasForms
                 ->schema([
                     View::make('filament.supermarkets.partials.review-photo')
                         ->viewData([
-                            'photoUrl' => $this->photoUrl,
+                            'photoUrl' => $this->photoUrl($photo),
                             'supermarketName' => $photo->supermarket?->name,
                             'storeLabel' => $photo->store_label,
                         ]),
@@ -446,6 +486,22 @@ class ReviewPricePhotos extends Page implements HasForms
         }
 
         $this->loadNextPhoto();
+    }
+
+    /**
+     * The existing supermarket product currently selected in the review form,
+     * used to pre-fill the linked product when capturing a supplier lead. Falls
+     * back to the first entry that references a saved product.
+     */
+    protected function reviewedProductId(): ?int
+    {
+        foreach ($this->data['entries'] ?? [] as $entry) {
+            if (! blank($entry['supermarket_product_id'] ?? null)) {
+                return (int) $entry['supermarket_product_id'];
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -105,6 +105,41 @@ class ReviewPricePhotosPageTest extends TestCase
         ]);
     }
 
+    public function test_saving_re_renders_the_content_with_the_next_photo(): void
+    {
+        $supermarket = SupermarketFactory::new()->create();
+        $product = SupermarketProduct::factory()->create();
+        $first = SupermarketPricePhoto::factory()->create([
+            'supermarket_id' => $supermarket->id,
+            'status' => SupermarketPricePhoto::STATUS_PENDING,
+            'path' => 'photos/first-shelf.jpg',
+        ]);
+        $second = SupermarketPricePhoto::factory()->create([
+            'supermarket_id' => $supermarket->id,
+            'status' => SupermarketPricePhoto::STATUS_PENDING,
+            'path' => 'photos/second-shelf.jpg',
+        ]);
+
+        // The "Save & next" button submits the form, so the content schema is
+        // built for the current photo while the submit is handled and would keep
+        // being rendered unless it is rebuilt once the next photo loads. Assert
+        // the rendered markup actually advances to the second photo's image.
+        Livewire::test(ReviewPricePhotos::class)
+            ->assertSet('photoId', $first->id)
+            ->assertSee('first-shelf.jpg')
+            ->set('data.entries', [
+                [
+                    'supermarket_product_id' => $product->id,
+                    'price' => 4.20,
+                    'is_promo' => false,
+                ],
+            ])
+            ->call('save')
+            ->assertSet('photoId', $second->id)
+            ->assertSee('second-shelf.jpg')
+            ->assertDontSee('first-shelf.jpg');
+    }
+
     public function test_saving_creates_a_new_product_inline_when_no_existing_product_chosen(): void
     {
         $packagingMethod = PackagingMethod::query()->where('name', 'Cutie')->firstOrFail();
@@ -213,6 +248,7 @@ class ReviewPricePhotosPageTest extends TestCase
             Permission::firstOrCreate(['name' => 'Create:SupplierLead', 'guard_name' => 'web']),
         );
 
+        $product = SupermarketProduct::factory()->create();
         SupermarketPricePhoto::factory()->create(['status' => SupermarketPricePhoto::STATUS_PENDING]);
 
         Livewire::test(ReviewPricePhotos::class)
@@ -223,6 +259,7 @@ class ReviewPricePhotosPageTest extends TestCase
                 'email' => 'contact@ferma-ardeal.test',
                 'phone' => '+40 745 123 456',
                 'notes' => 'Met at the local market, sells organic tomatoes.',
+                'supermarket_product_id' => $product->id,
             ])
             ->assertHasNoActionErrors();
 
@@ -232,9 +269,27 @@ class ReviewPricePhotosPageTest extends TestCase
             'website' => 'https://ferma-ardeal.test',
             'email' => 'contact@ferma-ardeal.test',
             'phone' => '+40 745 123 456',
+            'supermarket_product_id' => $product->id,
             'created_by' => $this->user->id,
             'converted_supplier_id' => null,
         ]);
+    }
+
+    public function test_the_supplier_lead_modal_pre_fills_the_product_being_reviewed(): void
+    {
+        $this->user->givePermissionTo(
+            Permission::firstOrCreate(['name' => 'Create:SupplierLead', 'guard_name' => 'web']),
+        );
+
+        $product = SupermarketProduct::factory()->create();
+        SupermarketPricePhoto::factory()->create(['status' => SupermarketPricePhoto::STATUS_PENDING]);
+
+        Livewire::test(ReviewPricePhotos::class)
+            ->set('data.entries', [
+                ['supermarket_product_id' => $product->id, 'price' => 3.50, 'is_promo' => false],
+            ])
+            ->mountAction('addSupplierLead')
+            ->assertActionDataSet(['supermarket_product_id' => $product->id]);
     }
 
     public function test_a_supplier_lead_can_be_added_from_under_the_add_product_button(): void

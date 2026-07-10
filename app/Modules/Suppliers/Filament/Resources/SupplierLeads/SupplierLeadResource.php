@@ -12,6 +12,7 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -87,6 +88,13 @@ class SupplierLeadResource extends Resource
                             ->label(__('Phone'))
                             ->tel()
                             ->maxLength(255),
+                        Select::make('supermarket_product_id')
+                            ->label(__('Product'))
+                            ->helperText(__('The supermarket product this potential supplier could provide.'))
+                            ->relationship('supermarketProduct', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->columnSpanFull(),
                         Textarea::make('notes')
                             ->label(__('Notes about supplier'))
                             ->columnSpanFull(),
@@ -121,6 +129,11 @@ class SupplierLeadResource extends Resource
                     ->label(__('Phone'))
                     ->searchable()
                     ->copyable(),
+                TextColumn::make('supermarketProduct.name')
+                    ->label(__('Product'))
+                    ->searchable()
+                    ->toggleable()
+                    ->placeholder('—'),
                 TextColumn::make('creator.name')
                     ->label(__('Created by'))
                     ->toggleable(),

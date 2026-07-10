@@ -28,6 +28,7 @@ class SupplierLeadFactory extends Factory
             'phone' => fake()->phoneNumber(),
             'notes' => fake()->optional()->sentence(),
             'created_by' => null,
+            'supermarket_product_id' => null,
             'converted_supplier_id' => null,
             'converted_at' => null,
         ];
