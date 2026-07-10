@@ -9,6 +9,8 @@ use App\Modules\TenantSettings\Models\TenantSetting;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
+use Mpdf\Config\ConfigVariables;
+use Mpdf\Config\FontVariables;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
 
@@ -21,7 +23,7 @@ use Mpdf\Output\Destination;
 class CustomerOfferPdfExporter
 {
     /** Brand red used throughout the document. */
-    public const RED = '#C1272D';
+    public const RED = '#C32026';
 
     /** Tenant setting key holding the merchant's bank accounts (JSON array of {bank, iban}). */
     public const BANK_ACCOUNTS_SETTING = 'offer_bank_accounts';
@@ -46,6 +48,9 @@ class CustomerOfferPdfExporter
             mkdir($tempDir, 0775, true);
         }
 
+        $fontData = (new FontVariables)->getDefaults()['fontdata'];
+        $fontDirs = (new ConfigVariables)->getDefaults()['fontDir'];
+
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
@@ -53,7 +58,15 @@ class CustomerOfferPdfExporter
             'margin_right' => 0,
             'margin_top' => 0,
             'margin_bottom' => 0,
-            'default_font' => 'dejavusans',
+            // Inter, embedded as selectable/searchable text. Separate families give
+            // per-weight control (mpdf only exposes R/B per family).
+            'fontDir' => array_merge($fontDirs, [resource_path('fonts/inter')]),
+            'fontdata' => $fontData + [
+                'inter' => ['R' => 'Inter-Regular.ttf', 'B' => 'Inter-Bold.ttf'],
+                'intermedium' => ['R' => 'Inter-Medium.ttf'],
+                'intersemibold' => ['R' => 'Inter-SemiBold.ttf'],
+            ],
+            'default_font' => 'inter',
             'tempDir' => $tempDir,
         ]);
 
