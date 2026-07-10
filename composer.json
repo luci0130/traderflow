@@ -15,6 +15,8 @@
         "laravel/framework": "^13.7",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
+        "mpdf/mpdf": "^8.3",
+        "mpdf/qrcode": "^1.2",
         "spatie/laravel-permission": "^7.4",
         "stechstudio/filament-impersonate": "^5.5",
         "stevebauman/location": "^7.6"

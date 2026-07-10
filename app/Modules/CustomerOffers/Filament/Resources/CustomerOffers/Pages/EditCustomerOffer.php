@@ -7,6 +7,7 @@ use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Services\CustomerOfferAcceptor;
 use App\Modules\CustomerOffers\Services\CustomerOfferEmailSender;
 use App\Modules\CustomerOffers\Services\CustomerOfferExcelExporter;
+use App\Modules\CustomerOffers\Services\CustomerOfferPdfExporter;
 use App\Modules\SalesOrders\Filament\Resources\SalesOrders\SalesOrderResource;
 use Closure;
 use Filament\Actions\Action;
@@ -71,6 +72,22 @@ class EditCustomerOffer extends EditRecord
                         @unlink($path);
                     }, $filename, [
                         'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    ]);
+                }),
+            Action::make('generateOfferPdf')
+                ->label(__('Generate PDF offer'))
+                ->icon(Heroicon::OutlinedDocumentArrowDown)
+                ->color('danger')
+                ->action(function (CustomerOffer $record): StreamedResponse {
+                    $path = app(CustomerOfferPdfExporter::class)->export($record);
+
+                    $filename = 'oferta-'.($record->offer_number ?: $record->getKey()).'.pdf';
+
+                    return response()->streamDownload(function () use ($path): void {
+                        readfile($path);
+                        @unlink($path);
+                    }, $filename, [
+                        'Content-Type' => 'application/pdf',
                     ]);
                 }),
             Action::make('sendOfferEmail')
