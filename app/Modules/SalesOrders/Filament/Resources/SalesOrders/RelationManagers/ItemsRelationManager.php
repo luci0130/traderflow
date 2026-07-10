@@ -63,26 +63,29 @@ class ItemsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
+        // Amounts follow the parent order's currency, not a fixed EUR.
+        $currency = $this->getOwnerRecord()->currency ?? 'EUR';
+
         return $table
             ->columns([
                 TextColumn::make('product.name')->searchable(),
                 TextColumn::make('supplier.name')->searchable(),
                 TextColumn::make('unit.symbol'),
                 TextColumn::make('quantity')->numeric(),
-                TextColumn::make('purchase_price')->money('EUR')->sortable(),
-                TextColumn::make('sale_price')->money('EUR')->sortable(),
+                TextColumn::make('purchase_price')->money($currency)->sortable(),
+                TextColumn::make('sale_price')->money($currency)->sortable(),
                 TextColumn::make('margin_value')
                     ->label(__('Profit / kg'))
-                    ->money('EUR')
+                    ->money($currency)
                     ->sortable(),
                 TextColumn::make('profit_line')
                     ->label(__('Profit'))
-                    ->money('EUR')
+                    ->money($currency)
                     ->getStateUsing(fn (SalesOrderItem $record): float => (float) $record->margin_value * (float) $record->quantity),
                 TextColumn::make('margin_percent')
                     ->numeric()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('line_total')->money('EUR')->sortable(),
+                TextColumn::make('line_total')->money($currency)->sortable(),
             ])
             ->headerActions([
                 CreateAction::make()

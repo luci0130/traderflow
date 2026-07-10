@@ -19,7 +19,7 @@ class SalesOrderProfitTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createOrderWithItem(array $itemAttributes = []): array
+    private function createOrderWithItem(array $itemAttributes = [], string $currency = 'EUR'): array
     {
         $tenant = Tenant::create(['name' => 'Tenant A']);
         $user = User::factory()->create();
@@ -34,7 +34,7 @@ class SalesOrderProfitTest extends TestCase
         $order = SalesOrder::create([
             'tenant_id' => $tenant->id,
             'customer_id' => $customer->id,
-            'currency' => 'EUR',
+            'currency' => $currency,
             'status' => 'draft',
             'subtotal' => 0,
             'tax_total' => 0,
@@ -99,6 +99,20 @@ class SalesOrderProfitTest extends TestCase
         ])
             ->assertSuccessful()
             ->assertSee('€40.00');
+    }
+
+    public function test_items_amounts_follow_the_order_currency(): void
+    {
+        [$order] = $this->createOrderWithItem(currency: 'RON');
+
+        // A RON order must render its item amounts in RON, never euro.
+        Livewire::test(ItemsRelationManager::class, [
+            'ownerRecord' => $order,
+            'pageClass' => EditSalesOrder::class,
+        ])
+            ->assertSuccessful()
+            ->assertSee('RON')
+            ->assertDontSee('€');
     }
 
     public function test_profit_line_calculation_is_margin_value_times_quantity(): void

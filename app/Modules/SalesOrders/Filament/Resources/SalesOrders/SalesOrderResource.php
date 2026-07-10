@@ -136,7 +136,9 @@ class SalesOrderResource extends Resource
                 TextColumn::make('order_date')->date()->sortable(),
                 TextColumn::make('delivery_date')->date()->sortable(),
                 TextColumn::make('status')->badge()->color(fn (?string $state): array => StatusColors::badge($state))->searchable()->sortable(),
-                TextColumn::make('total')->money('EUR')->sortable(),
+                TextColumn::make('total')
+                    ->money(fn (SalesOrder $record): string => $record->currency ?? 'EUR')
+                    ->sortable(),
             ])
             ->filters([
                 SelectFilter::make('status')
