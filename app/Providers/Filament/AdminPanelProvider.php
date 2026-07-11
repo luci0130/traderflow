@@ -37,6 +37,9 @@ class AdminPanelProvider extends PanelProvider
         $panel = $panel
             ->default()
             ->id('admin')
+            // Bind to a dedicated (sub)domain in production; null falls back to
+            // path-based routing ("/") for local/dev.
+            ->domain(config('app.panel_domains.admin'))
             ->path('')
             ->login()
             ->navigationGroups([
