@@ -53,10 +53,10 @@
     <div class="footer-bar">
         <table style="color: #ffffff;">
             <tr>
-                <td style="width: 33%;">@if ($supplier['address'] !== '-'){!! $icon('pin', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['address'] }}</span>@endif</td>
-                <td style="width: 27%; text-align: center;">@if ($supplier['email']){!! $icon('envelope', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['email'] }}</span>@endif</td>
-                <td style="width: 16%; text-align: center; white-space: nowrap;">@if ($supplier['phone']){!! $icon('phone', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['phone'] }}</span>@endif</td>
-                <td style="width: 24%; text-align: right; white-space: nowrap;">@if ($supplier['website']){!! $icon('globe', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ preg_replace('#^https?://#', '', rtrim($supplier['website'], '/')) }}</span>@endif</td>
+                <td style="width: 36%;">@if ($supplier['email']){!! $icon('envelope', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['email'] }}</span>@endif</td>
+                <td style="width: 20%; text-align: center; white-space: nowrap;">@if ($supplier['phone']){!! $icon('phone', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ $supplier['phone'] }}</span>@endif</td>
+                <td style="width: 30%; text-align: center; white-space: nowrap;">@if ($supplier['website']){!! $icon('globe', '#ffffff', 14) !!} <span class="w5" style="vertical-align: 3px;">{{ preg_replace('#^https?://#', '', rtrim($supplier['website'], '/')) }}</span>@endif</td>
+                <td style="width: 14%; text-align: right; white-space: nowrap;"><span class="w5">{PAGENO} / {nbpg}</span></td>
             </tr>
         </table>
     </div>
