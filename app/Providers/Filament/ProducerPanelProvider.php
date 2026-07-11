@@ -26,9 +26,14 @@ class ProducerPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        $producerDomain = config('app.panel_domains.producer');
+
         $panel = $panel
             ->id('producer')
-            ->path('producer')
+            // On a dedicated (sub)domain the panel lives at the root; otherwise
+            // it stays under "/producer" (local/dev, path-based routing).
+            ->domain($producerDomain)
+            ->path($producerDomain ? '' : 'producer')
             ->homeUrl(fn (): string => SupplierProductResource::getUrl('index'))
             ->login()
             ->registration(RegisterProducer::class)

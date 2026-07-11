@@ -56,6 +56,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Filament Panel Domains
+    |--------------------------------------------------------------------------
+    |
+    | Optional dedicated (sub)domains for the Filament panels. When set, each
+    | panel is served at the root of its domain (e.g. admin.example.com and
+    | customer.example.com). When null (local/dev), the panels fall back to
+    | path-based routing ("/" for admin, "/producer" for the producer panel).
+    |
+    */
+
+    'panel_domains' => [
+        'admin' => env('ADMIN_PANEL_DOMAIN'),
+        'producer' => env('PRODUCER_PANEL_DOMAIN'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
