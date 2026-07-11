@@ -40,32 +40,36 @@ class AdminPanelProvider extends PanelProvider
             ->path('')
             ->login()
             ->navigationGroups([
-                // Every entry must be a NavigationGroup object: Filament only
-                // honours the configured group order when the first element is
-                // a NavigationGroup (see NavigationManager). A bare string here
-                // silently falls back to discovery order.
-                NavigationGroup::make(__('Entities'))
+                // Labels are closures so `__()` is evaluated per request, at the
+                // active locale. Resources set their group via getNavigationGroup()
+                // (also request-time __()), so a group registered here matches its
+                // items only when both resolve to the same string. Evaluating the
+                // label at boot instead (plain `__('Entities')`) breaks the match
+                // on non-default locales, dropping the group icon/collapsed state.
+                // Every entry must be a NavigationGroup object too: Filament only
+                // honours the configured order when the first element is one.
+                NavigationGroup::make(fn (): string => __('Entities'))
                     ->icon(Heroicon::OutlinedBuildingOffice2)
                     ->collapsed(),
-                NavigationGroup::make(__('Catalog'))
+                NavigationGroup::make(fn (): string => __('Catalog'))
                     ->icon(Heroicon::OutlinedRectangleStack)
                     ->collapsed(),
-                NavigationGroup::make(__('Purchasing'))
+                NavigationGroup::make(fn (): string => __('Purchasing'))
                     ->icon(Heroicon::OutlinedShoppingCart)
                     ->collapsed(),
-                NavigationGroup::make(__('Sales'))
+                NavigationGroup::make(fn (): string => __('Sales'))
                     ->icon(Heroicon::OutlinedBanknotes)
                     ->collapsed(),
-                NavigationGroup::make(__('Analytics'))
+                NavigationGroup::make(fn (): string => __('Analytics'))
                     ->icon(Heroicon::OutlinedChartBar)
                     ->collapsed(),
-                NavigationGroup::make(__('Reports'))
+                NavigationGroup::make(fn (): string => __('Reports'))
                     ->icon(Heroicon::OutlinedDocumentChartBar)
                     ->collapsed(),
-                NavigationGroup::make(__('Supermarkets'))
+                NavigationGroup::make(fn (): string => __('Supermarkets'))
                     ->icon(Heroicon::OutlinedBuildingStorefront)
                     ->collapsed(),
-                NavigationGroup::make(__('Administration'))
+                NavigationGroup::make(fn (): string => __('Administration'))
                     ->icon(Heroicon::OutlinedCog6Tooth)
                     ->collapsed(),
             ])
@@ -123,7 +127,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->plugins([
                 FilamentShieldPlugin::make()
-                    ->navigationGroup(__('Administration'))
+                    ->navigationGroup(fn (): string => __('Administration'))
                     ->navigationLabel(__('Roles'))
                     ->navigationSort(80)
                     ->navigationIcon(Heroicon::OutlinedShieldCheck),

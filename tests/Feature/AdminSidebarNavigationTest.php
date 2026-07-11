@@ -65,6 +65,34 @@ class AdminSidebarNavigationTest extends TestCase
         }
     }
 
+    public function test_group_icons_survive_a_non_default_locale(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        // Resources resolve their group name with request-time __(); the panel
+        // must too, or on a non-default locale the configured group (with its
+        // icon) no longer matches its items and the icon is silently dropped.
+        $this->app->setLocale('ro');
+
+        $labelledGroups = collect(Filament::getCurrentPanel()->getNavigation())
+            ->filter(fn ($group): bool => filled($group->getLabel()));
+
+        $this->assertNotEmpty($labelledGroups);
+
+        foreach ($labelledGroups as $group) {
+            $this->assertNotNull(
+                $group->getIcon(),
+                "Group [{$group->getLabel()}] lost its icon under the 'ro' locale.",
+            );
+        }
+
+        // Shield's Roles item must land in the same (iconed) Administration group
+        // as the admin resources, not a separate un-iconed one.
+        $adminGroup = $labelledGroups->first(fn ($group): bool => $group->getLabel() === __('Administration'));
+        $this->assertNotNull($adminGroup);
+        $this->assertNotNull($adminGroup->getIcon());
+    }
+
     public function test_groups_render_in_the_configured_order(): void
     {
         $this->actingAsSuperAdmin();
