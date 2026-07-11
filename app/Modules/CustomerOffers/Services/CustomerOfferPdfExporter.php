@@ -197,14 +197,16 @@ class CustomerOfferPdfExporter
     }
 
     /**
-     * Absolute filesystem path to the item's product image, resolved in order:
-     * the product's own/category picture, the supplier product's picture, then a
-     * drop-in file at public/images/offer-pdf/products/{name-slug|id}.{ext}.
-     * Null when none exists so the template shows a placeholder.
+     * Absolute filesystem path to the item's product image. Mirrors the offer
+     * editor's resolution (items-board): the product's own picture or its
+     * category's, then the chosen supplier product's own picture or its
+     * category's (matched by the free-text category name). Finally a drop-in file
+     * at public/images/offer-pdf/products/{name-slug|id}.{ext}. Null when none
+     * exists so the template shows a placeholder.
      */
     private function itemImagePath(CustomerOfferItem $item): ?string
     {
-        $relative = $item->product?->display_image_path ?: $item->supplierProduct?->image_path;
+        $relative = $item->product?->display_image_path ?: $item->supplierProduct?->display_image_path;
 
         if (filled($relative)) {
             $disk = Storage::disk('public');
