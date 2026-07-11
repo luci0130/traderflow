@@ -7,12 +7,17 @@
 // group (e.g. a page's sub-navigation) keeps Filament's default toggle so its
 // state is left untouched.
 
+// Labelled groups only. The ungrouped items (e.g. the Dashboard link) live in a
+// group with an empty `data-group-label`; it has no header to toggle and must
+// never be collapsed by the accordion, or the Dashboard link would disappear.
 const mainSidebarGroupLabels = () =>
     Array.from(
         document.querySelectorAll(
             '.fi-main-sidebar .fi-sidebar-group[data-group-label]',
         ),
-    ).map((element) => element.dataset.groupLabel)
+    )
+        .map((element) => element.dataset.groupLabel)
+        .filter((label) => label !== '' && label != null)
 
 const enforceAccordion = (store) => {
     if (!store || store.__accordionPatched) {
@@ -20,6 +25,12 @@ const enforceAccordion = (store) => {
     }
 
     store.__accordionPatched = true
+
+    // Self-heal: earlier builds could persist the empty label of the ungrouped
+    // group into collapsedGroups, hiding the Dashboard link. Drop it on load.
+    if (Array.isArray(store.collapsedGroups) && store.collapsedGroups.includes('')) {
+        store.collapsedGroups = store.collapsedGroups.filter((label) => label !== '')
+    }
 
     store.toggleCollapsedGroup = function (group) {
         const groupLabels = mainSidebarGroupLabels()
