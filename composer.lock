@@ -10101,20 +10101,30 @@
             "dist": {
                 "type": "path",
                 "url": "packages/filament-image-gallery",
-                "reference": "3f63f82bd1fbcc8e68cad454408ef2da8cedfea6"
+                "reference": "3b8ac04638456f4ec1da310c48d001b4644b6148"
             },
             "require": {
+                "ext-curl": "*",
                 "ext-fileinfo": "*",
                 "ext-gd": "*",
                 "filament/actions": "^5.0",
+                "filament/filament": "^5.0",
                 "filament/forms": "^5.0",
+                "filament/notifications": "^5.0",
+                "filament/schemas": "^5.0",
                 "filament/support": "^5.0",
                 "illuminate/database": "^13.0",
                 "illuminate/filesystem": "^13.0",
                 "illuminate/http": "^13.0",
                 "illuminate/support": "^13.0",
-                "livewire/livewire": "^4.0",
-                "php": "^8.5"
+                "livewire/livewire": "^4.1",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "^1.24",
+                "orchestra/testbench": "^11.0",
+                "phpunit/phpunit": "^12.0"
             },
             "type": "library",
             "extra": {
@@ -10126,8 +10136,25 @@
             },
             "autoload": {
                 "psr-4": {
-                    "Turiac\\FilamentImageGallery\\": "src/"
+                    "Turiac\\FilamentImageGallery\\": "src/",
+                    "Turiac\\FilamentImageGallery\\Database\\Factories\\": "database/factories/"
                 }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Turiac\\FilamentImageGallery\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "analyse": [
+                    "phpstan analyse"
+                ],
+                "format": [
+                    "pint"
+                ],
+                "test": [
+                    "phpunit"
+                ]
             },
             "license": [
                 "proprietary"
