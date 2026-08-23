@@ -79,6 +79,30 @@ class UploadPricePhotosPageTest extends TestCase
         Storage::disk('public')->assertExists($photo->path);
     }
 
+    public function test_a_photo_larger_than_the_old_ten_megabyte_cap_is_accepted(): void
+    {
+        $supermarket = SupermarketFactory::new()->create();
+        $location = CustomerLocation::factory()->create(['customer_id' => $supermarket->id]);
+
+        Livewire::test(UploadPricePhotos::class)
+            ->set('data.supermarket_id', $supermarket->id)
+            ->set('data.customer_location_id', $location->id)
+            ->set('data.photos', [UploadedFile::fake()->image('huge-shelf.jpg')->size(51200)])
+            ->call('storePhotos')
+            ->assertHasNoErrors();
+
+        $this->assertSame(1, SupermarketPricePhoto::query()->count());
+    }
+
+    public function test_livewire_temporary_uploads_are_not_capped_at_twelve_megabytes(): void
+    {
+        // Livewire validates the temporary upload before Filament ever sees the
+        // file, and its default rule (max:12288) is the tighter of the two.
+        $rules = config('livewire.temporary_file_upload.rules');
+
+        $this->assertContains('max:1048576', $rules);
+    }
+
     public function test_supermarket_is_required(): void
     {
         Livewire::test(UploadPricePhotos::class)

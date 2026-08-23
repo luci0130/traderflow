@@ -11,8 +11,8 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Notifications\Notification;
@@ -184,7 +184,9 @@ class UploadPricePhotos extends Page implements HasForms
                     ->appendFiles()
                     ->disk('public')
                     ->directory('supermarket-photos')
-                    ->maxSize(10240)
+                    // Deliberately no maxSize(): phone photos of price labels come
+                    // in whatever size the camera produced, so the only ceiling is
+                    // the one PHP and nginx enforce (see the Dockerfile).
                     ->required()
                     ->columnSpanFull(),
             ]);

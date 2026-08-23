@@ -78,6 +78,13 @@ RUN install-php-extensions intl gd bcmath exif
 # Copy the fully-built application (vendor + public/build included)
 COPY --from=build --chown=www-data:www-data /app /var/www/html
 
+# Upload ceilings. The serversideup defaults (100M) cut off large phone photos
+# on the price-photo upload page; these are the values nginx and PHP are
+# templated with at container start.
+ENV PHP_UPLOAD_MAX_FILE_SIZE=1G \
+    PHP_POST_MAX_SIZE=1G \
+    NGINX_CLIENT_MAX_BODY_SIZE=1G
+
 # Laravel's scheduler as an s6 service alongside nginx/php-fpm, so the tasks
 # registered in routes/console.php (image housekeeping, ...) actually run.
 COPY docker/s6-overlay/s6-rc.d /etc/s6-overlay/s6-rc.d
