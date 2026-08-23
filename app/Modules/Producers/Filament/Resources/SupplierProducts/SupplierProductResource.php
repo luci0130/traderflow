@@ -34,6 +34,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
 use UnitEnum;
 
 class SupplierProductResource extends Resource
@@ -124,10 +125,9 @@ class SupplierProductResource extends Resource
                         ->placeholder(__('2kg bag, 10kg crate...'))
                         ->maxLength(255),
                     Textarea::make('description')->label(__('Description'))->columnSpanFull(),
-                    FileUpload::make('image_path')
-                        ->label(__('Photo'))
-                        ->image()
-                        ->disk('public')
+                    ImageGallery::make('images')
+                        ->label(__('Images'))
+                        ->collection('supplier-products')
                         ->directory('supplier-products')
                         ->columnSpanFull(),
                 ])
@@ -424,6 +424,7 @@ class SupplierProductResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('imageGalleries.images.roles'))
             ->columns([
                 ImageColumn::make('display_image_path')
                     ->label(__('Photo'))

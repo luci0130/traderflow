@@ -5,3 +5,4 @@
 @source '../../../../app/Modules/Producers/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../resources/views/producers/**/*';
+@source '../../../../packages/filament-image-gallery/resources/views/**/*.blade.php';

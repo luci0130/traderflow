@@ -19,7 +19,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
@@ -40,6 +39,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
 use UnitEnum;
 
 /**
@@ -143,12 +143,10 @@ class SupplierProductResource extends Resource
                     TextInput::make('caliber')->label(__('Caliber'))->maxLength(255),
                     TextInput::make('quality')->label(__('Quality'))->maxLength(255),
                     Textarea::make('description')->label(__('Description'))->columnSpanFull(),
-                    FileUpload::make('image_path')
-                        ->label(__('Photo'))
-                        ->image()
-                        ->disk('public')
+                    ImageGallery::make('images')
+                        ->label(__('Images'))
+                        ->collection('supplier-products')
                         ->directory('supplier-products')
-                        ->maxSize(5120)
                         ->columnSpanFull(),
                 ]),
             Section::make(__('Packaging'))
@@ -379,6 +377,7 @@ class SupplierProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('imageGalleries.images.roles'))
             ->columns([
                 ImageColumn::make('display_image_path')->label(__('Photo'))->disk('public')->square()->size(48),
                 TextColumn::make('supplier.name')->label(__('Supplier'))->searchable()->sortable(),

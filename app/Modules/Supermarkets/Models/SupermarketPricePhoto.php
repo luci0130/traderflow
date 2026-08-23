@@ -45,6 +45,28 @@ class SupermarketPricePhoto extends Model
         });
     }
 
+    /**
+     * Delete the stored file while keeping the row, which stays as the audit
+     * trail for the prices that were read from it.
+     */
+    public function purgeFile(): bool
+    {
+        if (blank($this->path)) {
+            return false;
+        }
+
+        Storage::disk('public')->delete($this->path);
+
+        $this->forceFill(['path' => null])->save();
+
+        return true;
+    }
+
+    public function hasFile(): bool
+    {
+        return filled($this->path);
+    }
+
     public function supermarket(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'supermarket_id')->withoutGlobalScope('active_tenant');

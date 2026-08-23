@@ -14,7 +14,6 @@ use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -27,6 +26,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
 use UnitEnum;
 
 class ProductResource extends Resource
@@ -92,13 +92,10 @@ class ProductResource extends Resource
                             ->required(),
                         Textarea::make('description')
                             ->columnSpanFull(),
-                        FileUpload::make('image_path')
-                            ->label('Image')
-                            ->image()
-                            ->disk('public')
+                        ImageGallery::make('images')
+                            ->label(__('Images'))
+                            ->collection('products')
                             ->directory(fn (): string => 'products/'.(app(ActiveTenant::class)->id() ?? 'shared'))
-                            ->imageEditor()
-                            ->maxSize(5120)
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
@@ -109,7 +106,7 @@ class ProductResource extends Resource
     {
         return $table
             ->recordTitleAttribute('name')
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('category'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['category', 'imageGalleries.images.roles']))
             ->columns([
                 ImageColumn::make('display_image_path')
                     ->label('Image')

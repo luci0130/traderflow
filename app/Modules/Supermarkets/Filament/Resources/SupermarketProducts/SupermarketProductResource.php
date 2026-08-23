@@ -17,7 +17,6 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -33,7 +32,9 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
 use UnitEnum;
 
 class SupermarketProductResource extends Resource
@@ -105,7 +106,7 @@ class SupermarketProductResource extends Resource
                                 $fields['description'],
                                 $fields['barcode'],
                                 $fields['vat_rate'],
-                                $fields['image_path'],
+                                $fields['images'],
                             ]),
                     ]),
             ]);
@@ -201,12 +202,10 @@ class SupermarketProductResource extends Resource
             ->default('kg')
             ->searchable()
             ->required();
-        $image = FileUpload::make('image_path')
-            ->label(__('Photo'))
-            ->image()
-            ->disk('public')
+        $image = ImageGallery::make('images')
+            ->label(__('Images'))
+            ->collection('supermarket-products')
             ->directory('supermarket-products')
-            ->maxSize(5120)
             ->columnSpanFull();
 
         if ($compact) {
@@ -261,7 +260,7 @@ class SupermarketProductResource extends Resource
         }
 
         if ($includeImage) {
-            $fields['image_path'] = $image;
+            $fields['images'] = $image;
         }
 
         return $fields;
@@ -329,6 +328,7 @@ class SupermarketProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('imageGalleries.images.roles'))
             ->columns([
                 ImageColumn::make('display_image_path')
                     ->label('Photo')

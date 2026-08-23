@@ -14,6 +14,7 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -102,6 +103,40 @@ class ReviewPricePhotosPageTest extends TestCase
             'observed_at' => '2026-02-01 00:00:00',
             'source' => SupermarketPrice::SOURCE_PHOTO,
             'recorded_by' => $this->user->id,
+        ]);
+    }
+
+    public function test_saving_deletes_the_photo_file_but_keeps_the_record(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('supermarket-photos/shelf.jpg', 'photo-bytes');
+
+        $supermarket = SupermarketFactory::new()->create();
+        $product = SupermarketProduct::factory()->create();
+        $photo = SupermarketPricePhoto::factory()->create([
+            'supermarket_id' => $supermarket->id,
+            'status' => SupermarketPricePhoto::STATUS_PENDING,
+            'path' => 'supermarket-photos/shelf.jpg',
+        ]);
+
+        Livewire::test(ReviewPricePhotos::class)
+            ->assertSet('photoId', $photo->id)
+            ->set('data.entries', [
+                ['supermarket_product_id' => $product->id, 'price' => 4.20, 'is_promo' => false],
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        Storage::disk('public')->assertMissing('supermarket-photos/shelf.jpg');
+
+        $photo->refresh();
+        $this->assertNull($photo->path);
+        $this->assertSame(SupermarketPricePhoto::STATUS_DONE, $photo->status);
+
+        // The row stays as the audit trail the recorded prices point at.
+        $this->assertDatabaseHas('supermarket_prices', [
+            'supermarket_price_photo_id' => $photo->id,
+            'supermarket_product_id' => $product->id,
         ]);
     }
 

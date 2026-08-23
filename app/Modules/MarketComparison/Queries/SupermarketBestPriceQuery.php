@@ -10,8 +10,9 @@ use Illuminate\Support\Collection;
 
 /**
  * Resolves the sell side of the market comparison: recent supermarket price
- * observations for the products mapped to a canonical product, ranked by
- * price, highest (best paying) first.
+ * observations for the products mapped to a canonical product, reduced to the
+ * latest observation per supermarket and ranked by price, highest (best
+ * paying) first.
  */
 class SupermarketBestPriceQuery
 {
@@ -34,10 +35,33 @@ class SupermarketBestPriceQuery
                 fn (Builder $query): Builder => $query->whereKey($canonicalProduct->getKey()),
             )
             ->whereDate('observed_at', '>=', today()->subDays($recencyDays))
-            ->orderByDesc('price')
-            ->orderByDesc('observed_at')
             ->get()
+            ->groupBy(fn (SupermarketPrice $price): string => $this->supermarketKey($price))
+            ->map(fn (Collection $prices): SupermarketPrice => $prices->sort($this->latestFirst(...))->first())
+            ->sortByDesc(fn (SupermarketPrice $price): float => (float) $price->price)
+            ->values()
             ->map(fn (SupermarketPrice $price): SupermarketPriceCandidate => $this->toCandidate($price));
+    }
+
+    /**
+     * Prices are grouped per supermarket so only its latest observation shows.
+     * Orphan observations (no supermarket) keep their own group.
+     */
+    private function supermarketKey(SupermarketPrice $price): string
+    {
+        return $price->supermarket_id !== null
+            ? 'supermarket:'.$price->supermarket_id
+            : 'price:'.$price->getKey();
+    }
+
+    /**
+     * Most recently observed first, falling back to the most recently recorded
+     * row when two observations share the same date.
+     */
+    private function latestFirst(SupermarketPrice $a, SupermarketPrice $b): int
+    {
+        return [$b->observed_at?->getTimestamp() ?? 0, $b->getKey()]
+            <=> [$a->observed_at?->getTimestamp() ?? 0, $a->getKey()];
     }
 
     private function toCandidate(SupermarketPrice $price): SupermarketPriceCandidate

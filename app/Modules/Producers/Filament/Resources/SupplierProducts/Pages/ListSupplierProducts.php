@@ -19,6 +19,8 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Turiac\FilamentImageGallery\Contracts\GalleryRepository;
 
 class ListSupplierProducts extends ListRecords
 {
@@ -125,6 +127,28 @@ class ListSupplierProducts extends ListRecords
                     'min_quantity_value' => $row['min_quantity_value'],
                     'unit_price' => $row['unit_price'],
                 ]]);
+
+                if (filled($row['image_path'] ?? null)) {
+                    $imagePath = (string) $row['image_path'];
+                    $title = Str::of(basename($imagePath))->beforeLast('.')->value();
+
+                    app(GalleryRepository::class)->persist(
+                        owner: $product,
+                        collection: 'supplier-products',
+                        state: [[
+                            'path' => $imagePath,
+                            'original_filename' => basename($imagePath),
+                            'title' => $title,
+                            'alt_text' => $title,
+                            'roles' => config('filament-image-gallery.default_roles', ['main']),
+                        ]],
+                        configuredRoles: config('filament-image-gallery.roles', ['main' => 'Main']),
+                        disk: 'public',
+                        visibility: 'public',
+                        directory: 'supplier-products',
+                        trustedPaths: [$imagePath],
+                    );
+                }
 
                 $createdCount++;
             }

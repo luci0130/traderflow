@@ -4,6 +4,7 @@
 @source '../../../../app/Filament/**/*';
 @source '../../../../app/Modules/**/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
+@source '../../../../packages/filament-image-gallery/resources/views/**/*.blade.php';
 
 /*
  * Table-layout repeaters only switch from the stacked layout to a real table at
