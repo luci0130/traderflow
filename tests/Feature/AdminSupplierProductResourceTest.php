@@ -8,14 +8,17 @@ use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Products\Models\PackagingMethod;
-use App\Modules\Suppliers\Models\Supplier;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\CreateSupplierProduct;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\EditSupplierProduct;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\ListSupplierProducts;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\SupplierProductResource;
+use App\Modules\Suppliers\Models\Supplier;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -124,10 +127,44 @@ class AdminSupplierProductResourceTest extends TestCase
         ]);
     }
 
+    public function test_supplier_product_uses_the_image_gallery_component(): void
+    {
+        Storage::fake('public');
+        $producer = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $component = Livewire::test(CreateSupplierProduct::class);
+        $uploaderKey = collect($component->get('data.images'))
+            ->search(fn (array $item): bool => (bool) ($item['_is_uploader'] ?? false));
+
+        $this->assertIsString($uploaderKey);
+
+        $component
+            ->set("data.images.{$uploaderKey}.path", [UploadedFile::fake()->image('supplier.jpg', 320, 240)])
+            ->call('callSchemaComponentMethod', 'form.images', 'promotePendingUploaderFiles')
+            ->fillForm([
+                'producer_id' => $producer->id,
+                'name' => 'Supplier gallery product',
+                'status' => 'active',
+                'currency' => 'RON',
+                'min_quantity_unit' => 'kg',
+                'min_quantity_value' => '10',
+                'unit_price' => '3.50',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = SupplierProduct::query()->where('name', 'Supplier gallery product')->firstOrFail();
+
+        $this->assertSame(
+            $product->imageForRole('main', 'supplier-products')?->path,
+            $product->display_image_path,
+        );
+        $this->assertStringEndsWith('.webp', $product->display_image_path);
+    }
+
     public function test_type_column_is_dropped_in_favour_of_quality(): void
     {
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('supplier_products', 'type'));
-        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('supplier_products', 'quality'));
+        $this->assertFalse(Schema::hasColumn('supplier_products', 'type'));
+        $this->assertTrue(Schema::hasColumn('supplier_products', 'quality'));
     }
 
     public function test_create_persists_the_quality_advanced_field(): void

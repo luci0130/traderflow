@@ -25,6 +25,36 @@ class ProductDisplayImageTest extends TestCase
         $this->assertStringContainsString('products/rosii.webp', $product->displayImageUrl());
     }
 
+    public function test_product_prefers_the_primary_gallery_image(): void
+    {
+        $category = ProductCategory::create(['name' => 'Legume', 'image_path' => 'product-categories/legume.webp']);
+        $product = Product::create([
+            'name' => 'Roșii',
+            'status' => 'active',
+            'product_category_id' => $category->id,
+            'image_path' => 'products/legacy.webp',
+        ]);
+
+        $gallery = $product->imageGalleries()->create(['collection' => 'products']);
+        $image = $gallery->images()->create([
+            'disk' => 'public',
+            'path' => 'products/gallery.webp',
+            'visibility' => 'public',
+            'original_filename' => 'gallery.webp',
+            'title' => 'Gallery',
+            'mime_type' => 'image/webp',
+            'size' => 100,
+            'original_size' => 100,
+            'width' => 100,
+            'height' => 100,
+            'sort_order' => 1,
+        ]);
+        $image->roles()->create(['gallery_id' => $gallery->id, 'role' => 'main']);
+
+        $this->assertSame('products/gallery.webp', $product->display_image_path);
+        $this->assertStringContainsString('products/gallery.webp', $product->displayImageUrl());
+    }
+
     public function test_product_falls_back_to_the_category_image_when_it_has_none(): void
     {
         $category = ProductCategory::create(['name' => 'Legume', 'image_path' => 'product-categories/legume.webp']);

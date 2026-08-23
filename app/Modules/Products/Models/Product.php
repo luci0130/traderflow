@@ -15,32 +15,43 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
+use Turiac\FilamentImageGallery\Concerns\HasImageGalleries;
 
 class Product extends Model
 {
     use HasFactory;
+    use HasImageGalleries;
 
     protected $guarded = [];
 
     protected static function booted(): void
     {
-        static::deleted(function (Product $product): void {
-            if (filled($product->image_path)) {
-                Storage::disk('public')->delete($product->image_path);
-            }
+        static::deleting(function (Product $product): void {
+            $paths = collect([$product->image_path])
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            Storage::disk('public')->delete($paths);
         });
     }
 
     /**
-     * The image path to display for this product: its own picture, or the
-     * category's as a fallback when the product has none. Both live on the
-     * `public` disk. Loading the `category` relation avoids an N+1 query.
+     * Use the main gallery image, then the legacy image path, and finally
+     * the category image. Eager-load the gallery and category in lists.
      */
     protected function displayImagePath(): Attribute
     {
-        return Attribute::get(fn (): ?string => filled($this->image_path)
-            ? $this->image_path
-            : $this->category?->image_path);
+        return Attribute::get(function (): ?string {
+            if (filled($mainImage = $this->imageForRole('main', 'products')?->path)) {
+                return $mainImage;
+            }
+
+            return filled($this->image_path)
+                ? $this->image_path
+                : $this->category?->image_path;
+        });
     }
 
     /**

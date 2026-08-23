@@ -28,6 +28,9 @@ RUN apt-get update \
 
 # --- Composer dependencies (cached layer) ---
 COPY composer.json composer.lock ./
+# The local filament-image-gallery package is wired in as a Composer path
+# repository, so it has to exist before `composer install` runs.
+COPY packages ./packages
 # Build-time .env so artisan can boot during the build (real env is injected
 # at runtime by Coolify; this .env is removed before the runtime stage).
 COPY .env.example .env
@@ -74,6 +77,11 @@ RUN install-php-extensions intl gd bcmath exif
 
 # Copy the fully-built application (vendor + public/build included)
 COPY --from=build --chown=www-data:www-data /app /var/www/html
+
+# Laravel's scheduler as an s6 service alongside nginx/php-fpm, so the tasks
+# registered in routes/console.php (image housekeeping, ...) actually run.
+COPY docker/s6-overlay/s6-rc.d /etc/s6-overlay/s6-rc.d
+RUN chmod +x /etc/s6-overlay/s6-rc.d/laravel-scheduler/run
 
 # Make sure Laravel's writable dirs are owned by the runtime user
 RUN chown -R www-data:www-data storage bootstrap/cache \

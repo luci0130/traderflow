@@ -31,6 +31,8 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Turiac\FilamentImageGallery\Contracts\GalleryRepository;
 use UnitEnum;
 
 class ReviewPricePhotos extends Page implements HasForms
@@ -223,9 +225,11 @@ class ReviewPricePhotos extends Page implements HasForms
             : null;
     }
 
-    protected function photoUrl(SupermarketPricePhoto $photo): string
+    protected function photoUrl(SupermarketPricePhoto $photo): ?string
     {
-        return Storage::disk('public')->url($photo->path);
+        return $photo->hasFile()
+            ? Storage::disk('public')->url($photo->path)
+            : null;
     }
 
     protected function loadNextPhoto(): void
@@ -423,7 +427,7 @@ class ReviewPricePhotos extends Page implements HasForms
                 $productId = $entry['supermarket_product_id'] ?? null;
 
                 if (blank($productId)) {
-                    $productId = SupermarketProduct::create([
+                    $product = SupermarketProduct::create([
                         'name' => $entry['name'] ?? null,
                         'brand' => $entry['brand'] ?? null,
                         'category' => $entry['category'] ?? null,
@@ -436,7 +440,30 @@ class ReviewPricePhotos extends Page implements HasForms
                         'package_unit' => $entry['package_unit'] ?? null,
                         'vat_rate' => $entry['vat_rate'] ?? SupermarketProduct::DEFAULT_VAT_RATE,
                         'image_path' => $entry['image_path'] ?? null,
-                    ])->getKey();
+                    ]);
+                    $productId = $product->getKey();
+
+                    if (filled($entry['image_path'] ?? null)) {
+                        $imagePath = (string) $entry['image_path'];
+                        $title = Str::of(basename($imagePath))->beforeLast('.')->value();
+
+                        app(GalleryRepository::class)->persist(
+                            owner: $product,
+                            collection: 'supermarket-products',
+                            state: [[
+                                'path' => $imagePath,
+                                'original_filename' => basename($imagePath),
+                                'title' => $title,
+                                'alt_text' => $title,
+                                'roles' => config('filament-image-gallery.default_roles', ['main']),
+                            ]],
+                            configuredRoles: config('filament-image-gallery.roles', ['main' => 'Main']),
+                            disk: 'public',
+                            visibility: 'public',
+                            directory: 'supermarket-products',
+                            trustedPaths: [$imagePath],
+                        );
+                    }
                 }
 
                 SupermarketPrice::create([
@@ -455,6 +482,10 @@ class ReviewPricePhotos extends Page implements HasForms
 
             $photo->update(['status' => SupermarketPricePhoto::STATUS_DONE]);
         });
+
+        // The prices have been extracted, so the picture itself is no longer
+        // needed; the row stays behind as the audit trail.
+        $photo->purgeFile();
 
         Notification::make()
             ->title(__(':count price(s) saved', ['count' => count($data['entries'])]))

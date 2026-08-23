@@ -28,6 +28,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
 
 class ProductsRelationManager extends RelationManager
 {
@@ -84,6 +85,10 @@ class ProductsRelationManager extends RelationManager
                         Textarea::make('description')->label(__('Description'))->columnSpanFull(),
                     ])
                     ->columns(2),
+                ImageGallery::make('images')
+                    ->label(__('Images'))
+                    ->collection('supplier-products')
+                    ->directory('supplier-products'),
                 Section::make(__('Packaging'))
                     ->columns(3)
                     ->schema([
@@ -152,8 +157,9 @@ class ProductsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('name')
             ->defaultSort('created_at', 'desc')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('imageGalleries.images.roles'))
             ->columns([
-                ImageColumn::make('image_path')
+                ImageColumn::make('display_image_path')
                     ->label(__('Photo'))
                     ->disk('public')
                     ->square()

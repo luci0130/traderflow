@@ -1,0 +1,59 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "turiac/filament-image-gallery",
+    "description": "A polished, role-aware image gallery field for Filament.",
+    "type": "library",
+    "license": "proprietary",
+    "version": "0.1.0",
+    "require": {
+        "php": "^8.3",
+        "ext-curl": "*",
+        "ext-fileinfo": "*",
+        "ext-gd": "*",
+        "filament/actions": "^5.0",
+        "filament/filament": "^5.0",
+        "filament/forms": "^5.0",
+        "filament/notifications": "^5.0",
+        "filament/schemas": "^5.0",
+        "filament/support": "^5.0",
+        "illuminate/database": "^13.0",
+        "illuminate/filesystem": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/support": "^13.0",
+        "livewire/livewire": "^4.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Turiac\\FilamentImageGallery\\": "src/",
+            "Turiac\\FilamentImageGallery\\Database\\Factories\\": "database/factories/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Turiac\\FilamentImageGallery\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^11.0",
+        "phpunit/phpunit": "^12.0"
+    },
+    "scripts": {
+        "analyse": "phpstan analyse",
+        "format": "pint",
+        "test": "phpunit"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Turiac\\FilamentImageGallery\\FilamentImageGalleryServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -29,6 +29,7 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Turiac\FilamentImageGallery\FilamentImageGalleryPlugin;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -129,6 +130,7 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->plugins([
+                FilamentImageGalleryPlugin::make(),
                 FilamentShieldPlugin::make()
                     ->navigationGroup(fn (): string => __('Administration'))
                     ->navigationLabel(__('Roles'))

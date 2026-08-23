@@ -10,6 +10,8 @@ use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\Products\Models\PackagingMethod;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -75,6 +77,11 @@ class SupplierProductResourceTest extends TestCase
 
     public function test_quick_dynamic_rows_create_products_and_default_price_rows(): void
     {
+        Storage::fake('public');
+        Storage::disk('public')->put(
+            'supplier-products/quick.jpg',
+            UploadedFile::fake()->image('quick.jpg', 100, 100)->getContent(),
+        );
         $packagingMethod = PackagingMethod::query()->where('name', 'Plasă')->firstOrFail();
 
         $this->actingAs($this->producerUser);
@@ -82,6 +89,7 @@ class SupplierProductResourceTest extends TestCase
         Livewire::test(ListSupplierProducts::class)
             ->set('quickProducts.rows', [
                 [
+                    'image_path' => ['supplier-products/quick.jpg'],
                     'name' => 'Golden Apples',
                     'packaging_method_id' => $packagingMethod->id,
                     'quantity_available' => '1200',
@@ -104,6 +112,10 @@ class SupplierProductResourceTest extends TestCase
         $this->assertSame('kg', $product->min_quantity_unit);
         $this->assertSame('4.5000', $product->unit_price);
         $this->assertSame('RON', $product->currency);
+        $this->assertSame(
+            'supplier-products/quick.jpg',
+            $product->imageForRole('main', 'supplier-products')?->path,
+        );
 
         $this->assertDatabaseHas('supplier_product_prices', [
             'supplier_product_id' => $product->id,

@@ -6,17 +6,21 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\ProductCategories\Models\ProductCategory;
+use App\Modules\Products\Models\PackagingMethod;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\CreateSupermarketProduct;
+use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\EditSupermarketProduct;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\ListSupermarketProducts;
 use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\SupermarketProductResource;
-use App\Modules\Products\Models\PackagingMethod;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
+use Turiac\FilamentImageGallery\Services\GalleryPersister;
 
 use function setPermissionsTeamId;
 
@@ -57,6 +61,68 @@ class SupermarketProductBioTest extends TestCase
         $product = SupermarketProduct::query()->where('name', 'Rosii bio')->firstOrFail();
 
         $this->assertTrue($product->is_bio);
+    }
+
+    public function test_supermarket_product_uses_the_image_gallery_component(): void
+    {
+        Storage::fake('public');
+        $component = Livewire::test(CreateSupermarketProduct::class);
+        $uploaderKey = collect($component->get('data.images'))
+            ->search(fn (array $item): bool => (bool) ($item['_is_uploader'] ?? false));
+
+        $this->assertIsString($uploaderKey);
+
+        $component
+            ->set("data.images.{$uploaderKey}.path", [UploadedFile::fake()->image('market.jpg', 320, 240)])
+            ->call('callSchemaComponentMethod', 'form.images', 'promotePendingUploaderFiles')
+            ->fillForm(['name' => 'Supermarket gallery product'])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = SupermarketProduct::query()->where('name', 'Supermarket gallery product')->firstOrFail();
+
+        $this->assertSame(
+            $product->imageForRole('main', 'supermarket-products')?->path,
+            $product->display_image_path,
+        );
+        $this->assertStringEndsWith('.webp', $product->display_image_path);
+    }
+
+    public function test_existing_gallery_image_path_is_hydrated_as_an_array_and_can_be_saved(): void
+    {
+        Storage::fake('public');
+        $product = SupermarketProduct::create([
+            'name' => 'Existing gallery product',
+            'package_unit' => 'kg',
+        ]);
+        $path = 'supermarket-products/existing.png';
+        Storage::disk('public')->put($path, UploadedFile::fake()->image('existing.png')->getContent());
+
+        app(GalleryPersister::class)->persist(
+            owner: $product,
+            collection: 'supermarket-products',
+            state: [
+                'existing' => [
+                    'path' => $path,
+                    'title' => 'Existing image',
+                    'roles' => ['main'],
+                ],
+            ],
+            configuredRoles: ['main' => 'Main'],
+            disk: 'public',
+            visibility: 'public',
+        );
+
+        $component = Livewire::test(EditSupermarketProduct::class, ['record' => $product->getRouteKey()]);
+        $existingImage = collect($component->get('data.images'))
+            ->first(fn (mixed $item): bool => is_array($item) && ! ($item['_is_uploader'] ?? false));
+
+        $this->assertIsArray($existingImage['path']);
+        $this->assertSame([$path], array_values($existingImage['path']));
+
+        $component
+            ->call('save')
+            ->assertHasNoFormErrors();
     }
 
     public function test_supermarket_product_defaults_to_not_bio(): void

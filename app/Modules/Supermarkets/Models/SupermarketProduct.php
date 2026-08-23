@@ -14,10 +14,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
+use Turiac\FilamentImageGallery\Concerns\HasImageGalleries;
 
 class SupermarketProduct extends Model
 {
     use HasFactory;
+    use HasImageGalleries;
 
     public const DEFAULT_VAT_RATE = 11.0;
 
@@ -62,9 +64,15 @@ class SupermarketProduct extends Model
      */
     protected function displayImagePath(): Attribute
     {
-        return Attribute::get(fn (): ?string => filled($this->image_path)
-            ? $this->image_path
-            : app(CategoryImages::class)->pathFor($this->category));
+        return Attribute::get(function (): ?string {
+            if (filled($mainImage = $this->imageForRole('main', 'supermarket-products')?->path)) {
+                return $mainImage;
+            }
+
+            return filled($this->image_path)
+                ? $this->image_path
+                : app(CategoryImages::class)->pathFor($this->category);
+        });
     }
 
     public function prices(): HasMany

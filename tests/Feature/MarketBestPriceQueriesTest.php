@@ -181,11 +181,11 @@ class MarketBestPriceQueriesTest extends TestCase
         $product = SupermarketProduct::factory()->create();
         $canonical->supermarketProducts()->attach($product);
 
-        $profi = Customer::create(['name' => 'Profi', 'tenant_id' => null]);
+        foreach ([['Profi', 7], ['Mega', 9], ['Penny', 6]] as [$name, $price]) {
+            $supermarket = Customer::create(['name' => $name, 'tenant_id' => null]);
 
-        foreach ([7, 9, 6] as $price) {
             SupermarketPrice::create([
-                'supermarket_id' => $profi->id,
+                'supermarket_id' => $supermarket->id,
                 'supermarket_product_id' => $product->id,
                 'price' => $price,
                 'observed_at' => today(),
@@ -199,5 +199,81 @@ class MarketBestPriceQueriesTest extends TestCase
             ->all();
 
         $this->assertSame([9.0, 7.0, 6.0], $prices);
+    }
+
+    public function test_only_the_latest_price_per_supermarket_is_listed(): void
+    {
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $product = SupermarketProduct::factory()->create();
+        $otherProduct = SupermarketProduct::factory()->create();
+        $canonical->supermarketProducts()->attach([$product->id, $otherProduct->id]);
+
+        $kaufland = Customer::create(['name' => 'Kaufland Gara', 'tenant_id' => null]);
+        $carrefour = Customer::create(['name' => 'Carrefour Dambu', 'tenant_id' => null]);
+
+        SupermarketPrice::create([
+            'supermarket_id' => $kaufland->id,
+            'supermarket_product_id' => $product->id,
+            'price' => 12,
+            'observed_at' => today()->subDays(20),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+        SupermarketPrice::create([
+            'supermarket_id' => $kaufland->id,
+            'supermarket_product_id' => $otherProduct->id,
+            'price' => 5,
+            'observed_at' => today()->subDays(2),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+        SupermarketPrice::create([
+            'supermarket_id' => $carrefour->id,
+            'supermarket_product_id' => $product->id,
+            'price' => 8,
+            'observed_at' => today()->subDays(1),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+
+        $candidates = app(SupermarketBestPriceQuery::class)->candidatesFor($canonical);
+
+        $this->assertCount(2, $candidates);
+        $this->assertSame(['Carrefour Dambu', 'Kaufland Gara'], $candidates->map(fn ($candidate): string => $candidate->supermarketName)->all());
+        $this->assertSame([8.0, 5.0], $candidates->map(fn ($candidate): float => $candidate->grossPrice)->all());
+    }
+
+    public function test_the_best_supermarket_price_ignores_stale_observations_from_the_same_store(): void
+    {
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
+        $product = SupermarketProduct::factory()->create();
+        $canonical->supermarketProducts()->attach($product);
+
+        $kaufland = Customer::create(['name' => 'Kaufland Gara', 'tenant_id' => null]);
+        $lidl = Customer::create(['name' => 'LDL Gara', 'tenant_id' => null]);
+
+        SupermarketPrice::create([
+            'supermarket_id' => $kaufland->id,
+            'supermarket_product_id' => $product->id,
+            'price' => 15,
+            'observed_at' => today()->subDays(30),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+        SupermarketPrice::create([
+            'supermarket_id' => $kaufland->id,
+            'supermarket_product_id' => $product->id,
+            'price' => 6,
+            'observed_at' => today(),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+        SupermarketPrice::create([
+            'supermarket_id' => $lidl->id,
+            'supermarket_product_id' => $product->id,
+            'price' => 9,
+            'observed_at' => today()->subDays(3),
+            'source' => SupermarketPrice::SOURCE_MANUAL,
+        ]);
+
+        $best = app(SupermarketBestPriceQuery::class)->bestFor($canonical);
+
+        $this->assertSame('LDL Gara', $best->supermarketName);
+        $this->assertSame(9.0, $best->grossPrice);
     }
 }

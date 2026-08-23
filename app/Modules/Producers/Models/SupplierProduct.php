@@ -18,10 +18,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Storage;
+use Turiac\FilamentImageGallery\Concerns\HasImageGalleries;
 
 class SupplierProduct extends Model
 {
     use HasFactory;
+    use HasImageGalleries;
 
     protected $guarded = [];
 
@@ -44,9 +46,15 @@ class SupplierProduct extends Model
      */
     protected function displayImagePath(): Attribute
     {
-        return Attribute::get(fn (): ?string => filled($this->image_path)
-            ? $this->image_path
-            : app(CategoryImages::class)->pathFor($this->category));
+        return Attribute::get(function (): ?string {
+            if (filled($mainImage = $this->imageForRole('main', 'supplier-products')?->path)) {
+                return $mainImage;
+            }
+
+            return filled($this->image_path)
+                ? $this->image_path
+                : app(CategoryImages::class)->pathFor($this->category);
+        });
     }
 
     /**
