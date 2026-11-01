@@ -87,7 +87,8 @@ ENV PHP_UPLOAD_MAX_FILE_SIZE=1G \
 
 # Laravel's scheduler as an s6 service alongside nginx/php-fpm, so the tasks
 # registered in routes/console.php (image housekeeping, ...) actually run.
-COPY docker/s6-overlay/s6-rc.d /etc/s6-overlay/s6-rc.d
+COPY docker/s6-overlay/s6-rc.d/laravel-scheduler /etc/s6-overlay/s6-rc.d/laravel-scheduler
+COPY docker/s6-overlay/user-bundles.d /etc/s6-overlay/user-bundles.d
 RUN chmod +x /etc/s6-overlay/s6-rc.d/laravel-scheduler/run
 
 # Make sure Laravel's writable dirs are owned by the runtime user
