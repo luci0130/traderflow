@@ -6,6 +6,52 @@
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../packages/filament-image-gallery/resources/views/**/*.blade.php';
 
+.fi-supplier-products-table:has([data-supplier-products-grouped])
+    .fi-ta-content-header {
+    @apply hidden;
+}
+
+.fi-supplier-products-grouped {
+    @apply overflow-x-auto;
+
+    & .fi-ta-table {
+        @apply min-w-max;
+    }
+
+    & .fi-supplier-header-row > td,
+    & .fi-supplier-week-row > td {
+        @apply p-0;
+    }
+
+    & .fi-supplier-group-button {
+        @apply focus-visible:outline-primary-500 flex w-full items-center gap-3 bg-gray-100 px-4 py-3 text-start text-sm font-semibold text-gray-950 transition-colors hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-[-2px] dark:bg-white/10 dark:text-white dark:hover:bg-white/15;
+    }
+
+    & .fi-supplier-group-chevron {
+        @apply size-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400;
+
+        &.fi-expanded {
+            @apply rotate-90;
+        }
+    }
+
+    & .fi-supplier-week-button {
+        @apply border-s-4 border-transparent bg-gray-50 py-2 ps-10 text-xs dark:bg-white/5;
+
+        &.fi-expanded {
+            @apply border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-400/10;
+        }
+
+        & .fi-supplier-group-chevron {
+            @apply text-primary-500 dark:text-primary-400;
+        }
+    }
+
+    & .fi-supplier-week-dates {
+        @apply font-normal text-gray-500 dark:text-gray-400;
+    }
+}
+
 /*
  * Table-layout repeaters only switch from the stacked layout to a real table at
  * the @xl container width (576px). The supplier-product "Tiered pricing" repeater

@@ -8,6 +8,7 @@ use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Products\Models\PackagingMethod;
+use App\Modules\Suppliers\Filament\Pages\SupplierProductsV2;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\CreateSupplierProduct;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\EditSupplierProduct;
 use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\ListSupplierProducts;
@@ -59,6 +60,111 @@ class AdminSupplierProductResourceTest extends TestCase
         $this->assertSame('Catalog', SupplierProductResource::getNavigationGroup());
     }
 
+    public function test_supplier_products_v2_loads_latest_week_and_other_weeks_on_demand(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $otherSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Alt furnizor']);
+        $emptySupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Fără produse']);
+        $latest = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => 'Roșii noi',
+            'status' => 'active',
+            'currency' => 'EUR',
+            'unit_price' => 4,
+            'created_at' => '2026-10-05 10:00:00',
+        ]);
+        $older = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => 'Mere vechi',
+            'status' => 'active',
+            'currency' => 'EUR',
+            'created_at' => '2026-09-28 10:00:00',
+        ]);
+        SupplierProduct::create([
+            'producer_id' => $otherSupplier->id,
+            'name' => 'Produs alt furnizor',
+            'status' => 'active',
+            'currency' => 'EUR',
+        ]);
+
+        $this->assertTrue(Route::has('filament.admin.pages.supplier-products-v2'));
+
+        $page = Livewire::test(SupplierProductsV2::class)
+            ->assertSuccessful()
+            ->assertSee('data-supplier-products-grouped', escape: false)
+            ->assertSee('data-supplier-group="'.$supplier->id.'"', escape: false)
+            ->assertSee('data-supplier-group="'.$otherSupplier->id.'"', escape: false)
+            ->assertDontSee('data-supplier-group="'.$emptySupplier->id.'"', escape: false)
+            ->assertSee('await this.$wire.loadSupplier', escape: false)
+            ->assertDontSee('Roșii noi')
+            ->call('loadSupplier', $supplier->id)
+            ->assertSee('Week 41')
+            ->assertSee('Week 40')
+            ->assertSee('await this.$wire.loadWeek', escape: false)
+            ->assertSee('Roșii noi')
+            ->assertDontSee('Mere vechi');
+
+        $this->assertSame([$latest->id], $page->instance()->getTableRecords()->modelKeys());
+
+        $page->call('loadWeek', $supplier->id, '2026-09-28')
+            ->assertSee('Mere vechi');
+
+        $this->assertEqualsCanonicalizing(
+            [$latest->id, $older->id],
+            $page->instance()->getTableRecords()->modelKeys(),
+        );
+
+        $page->call('loadSupplier', $supplier->id)
+            ->call('loadWeek', $supplier->id, '2026-09-28');
+
+        $this->assertSame(['2026-10-05', '2026-09-28'], $page->instance()->loadedWeeks[$supplier->id]);
+    }
+
+    public function test_supplier_products_v2_loads_complete_groups_without_pagination(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $otherSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Alt furnizor']);
+        $productsByGroup = [];
+
+        foreach ([
+            [$supplier, '2026-10-05'],
+            [$supplier, '2026-09-28'],
+            [$otherSupplier, '2026-10-05'],
+        ] as $groupIndex => [$groupSupplier, $createdAt]) {
+            foreach (range(1, 12) as $productIndex) {
+                $productsByGroup[$groupIndex][] = SupplierProduct::create([
+                    'producer_id' => $groupSupplier->id,
+                    'name' => sprintf('Product %d-%02d', $groupIndex, $productIndex),
+                    'status' => 'active',
+                    'currency' => 'EUR',
+                    'created_at' => $createdAt,
+                ]);
+            }
+        }
+
+        $page = Livewire::test(SupplierProductsV2::class)
+            ->set('tableRecordsPerPage', 10)
+            ->assertCountTableRecords(0)
+            ->call('loadSupplier', $supplier->id)
+            ->assertCanSeeTableRecords($productsByGroup[0])
+            ->assertCanNotSeeTableRecords([...$productsByGroup[1], ...$productsByGroup[2]]);
+
+        $this->assertCount(12, $page->instance()->getTableRecords());
+
+        $page->call('loadWeek', $supplier->id, '2026-09-28')
+            ->assertCanSeeTableRecords([...$productsByGroup[0], ...$productsByGroup[1]])
+            ->assertCanNotSeeTableRecords($productsByGroup[2]);
+
+        $this->assertCount(24, $page->instance()->getTableRecords());
+
+        $page->call('loadSupplier', $otherSupplier->id)
+            ->assertCanSeeTableRecords([...$productsByGroup[0], ...$productsByGroup[1], ...$productsByGroup[2]])
+            ->assertDontSee('class="fi-pagination', escape: false);
+
+        $this->assertFalse($page->instance()->getTable()->isPaginated());
+        $this->assertCount(36, $page->instance()->getTableRecords());
+    }
+
     public function test_list_shows_products_from_every_supplier(): void
     {
         // Regular tenant suppliers (is_producer = 0) — the real-world case.
@@ -73,6 +179,119 @@ class AdminSupplierProductResourceTest extends TestCase
             ->assertCanSeeTableRecords([$first, $second])
             ->assertSee('Ferma Verde')
             ->assertSee('Agricola');
+    }
+
+    public function test_list_groups_by_supplier_before_grouping_by_creation_week(): void
+    {
+        app()->setLocale('ro');
+
+        $firstSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'A Go Fruit']);
+        $secondSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Z Fruit Active']);
+        $records = [];
+
+        foreach ([
+            [$secondSupplier, '2026-09-28 10:00:00', 'Mere Active'],
+            [$firstSupplier, '2026-09-28 10:00:00', 'Ardei Go Fruit'],
+            [$firstSupplier, '2026-09-21 10:00:00', 'Mere Go Fruit'],
+            [$firstSupplier, '2026-09-30 10:00:00', 'Rosii Go Fruit'],
+            [$secondSupplier, '2026-09-21 10:00:00', 'Ardei Active'],
+        ] as [$supplier, $createdAt, $name]) {
+            $records[$name] = SupplierProduct::create([
+                'producer_id' => $supplier->id,
+                'name' => $name,
+                'status' => 'active',
+                'currency' => 'EUR',
+                'created_at' => $createdAt,
+            ]);
+        }
+
+        $test = Livewire::test(ListSupplierProducts::class)->assertSuccessful()
+            ->assertSee('Săptămâna 39')
+            ->assertSee('Săptămâna 40')
+            ->assertSee('21.09.2026 – 27.09.2026')
+            ->assertSee('28.09.2026 – 04.10.2026');
+
+        $this->assertSame([
+            $records['Mere Go Fruit']->id,
+            $records['Ardei Go Fruit']->id,
+            $records['Rosii Go Fruit']->id,
+            $records['Ardei Active']->id,
+            $records['Mere Active']->id,
+        ], $test->instance()->getFilteredSortedTableQuery()->pluck('supplier_products.id')->all());
+
+        $document = new \DOMDocument;
+        @$document->loadHTML('<?xml encoding="UTF-8">'.$test->html());
+        $xpath = new \DOMXPath($document);
+        $rows = $xpath->query('//div[@data-supplier-products-grouped]//tbody/tr');
+        $types = [];
+
+        foreach ($rows as $row) {
+            $types[] = match (true) {
+                $row->hasAttribute('data-supplier-group') => 'supplier',
+                $row->hasAttribute('data-supplier-week') => 'week',
+                default => 'product',
+            };
+        }
+
+        $this->assertSame(['supplier', 'week', 'product', 'week', 'product', 'product', 'supplier', 'week', 'product', 'week', 'product'], $types);
+        $this->assertSame(['supplier.name', 'name', 'packagingMethod.name', 'unit_price', 'currency', 'min_quantity_value'], array_keys($test->instance()->getTable()->getVisibleColumns()));
+
+        $test->set('tableGrouping', 'created_week:desc')->assertSuccessful();
+        $this->assertSame([
+            $records['Ardei Go Fruit']->id,
+            $records['Rosii Go Fruit']->id,
+            $records['Mere Go Fruit']->id,
+            $records['Mere Active']->id,
+            $records['Ardei Active']->id,
+        ], $test->instance()->getFilteredSortedTableQuery()->pluck('supplier_products.id')->all());
+
+        $test->set('tableGrouping', null)
+            ->assertDontSee('data-supplier-products-grouped', escape: false)
+            ->assertCanSeeTableRecords(array_values($records));
+    }
+
+    public function test_nested_groups_keep_supplier_week_filters_and_search(): void
+    {
+        $firstSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Go Fruit']);
+        $secondSupplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Fruit Active']);
+        $included = SupplierProduct::create(['producer_id' => $firstSupplier->id, 'name' => 'Mere Gala', 'status' => 'active', 'currency' => 'EUR', 'created_at' => '2026-09-28']);
+        $wrongWeek = SupplierProduct::create(['producer_id' => $firstSupplier->id, 'name' => 'Mere Gala vechi', 'status' => 'active', 'currency' => 'EUR', 'created_at' => '2026-09-21']);
+        $wrongSupplier = SupplierProduct::create(['producer_id' => $secondSupplier->id, 'name' => 'Mere Active', 'status' => 'active', 'currency' => 'EUR', 'created_at' => '2026-09-28']);
+
+        Livewire::test(ListSupplierProducts::class)
+            ->filterTable('producer_id', $firstSupplier->id)
+            ->filterTable('created_week', ['date' => '2026-09-30'])
+            ->searchTable('Mere')
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords([$included])
+            ->assertCanNotSeeTableRecords([$wrongWeek, $wrongSupplier])
+            ->assertSee('data-supplier-group="'.$firstSupplier->id.'"', escape: false)
+            ->assertDontSee('data-supplier-group="'.$secondSupplier->id.'"', escape: false)
+            ->searchTable('No matching product')
+            ->assertCountTableRecords(0);
+    }
+
+    public function test_nested_groups_repeat_supplier_and_week_headers_after_pagination(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Go Fruit']);
+
+        foreach (range(1, 12) as $index) {
+            SupplierProduct::create(['producer_id' => $supplier->id, 'name' => sprintf('Product %02d', $index), 'status' => 'active', 'currency' => 'EUR', 'created_at' => '2026-09-28']);
+        }
+
+        $test = Livewire::test(ListSupplierProducts::class)
+            ->set('tableRecordsPerPage', 10)
+            ->assertSuccessful();
+
+        $this->assertCount(10, $test->instance()->getTableRecords());
+
+        $test->call('gotoPage', 2)->assertSuccessful()
+            ->assertSee('data-supplier-group="'.$supplier->id.'"', escape: false)
+            ->assertSee('data-supplier-week="supplier:'.$supplier->id.':week:2026-09-28"', escape: false)
+            ->assertSee('Product 11')
+            ->assertSee('Product 12');
+
+        $this->assertCount(2, $test->instance()->getTableRecords());
     }
 
     public function test_create_persists_product_with_tiers_and_cost_override(): void
@@ -125,6 +344,54 @@ class AdminSupplierProductResourceTest extends TestCase
             'commission' => 0.1,
             'profit_margin' => 0.4,
         ]);
+    }
+
+    public function test_create_persists_unknown_moq_as_null_without_inferring_it_from_packaging(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+
+        Livewire::test(CreateSupplierProduct::class)
+            ->fillForm([
+                'producer_id' => $supplier->id,
+                'name' => 'Mere fără MOQ',
+                'currency' => 'EUR',
+                'min_quantity_unit' => 'kg',
+                'package_size' => '10',
+                'unit_price' => '2.50',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = $supplier->supplierProducts()->sole();
+        $this->assertNull($product->min_quantity_value);
+        $this->assertSame('10.0000', $product->package_size);
+        $this->assertSame('kg', $product->min_quantity_unit);
+        $this->assertSame('2.5000', $product->unit_price);
+        $this->assertCount(0, $product->prices);
+        $this->assertDatabaseHas('supplier_products', ['id' => $product->id, 'min_quantity_value' => null]);
+    }
+
+    public function test_edit_can_clear_moq_and_keeps_unit_required(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $product = $supplier->supplierProducts()->create([
+            'name' => 'Mere',
+            'min_quantity_value' => 10,
+            'min_quantity_unit' => 'kg',
+            'unit_price' => 2.5,
+            'currency' => 'EUR',
+        ]);
+
+        Livewire::test(EditSupplierProduct::class, ['record' => $product->getRouteKey()])
+            ->fillForm(['min_quantity_value' => '', 'min_quantity_unit' => null])
+            ->call('save')
+            ->assertHasFormErrors(['min_quantity_unit' => 'required'])
+            ->fillForm(['min_quantity_unit' => 'kg'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertNull($product->fresh()->min_quantity_value);
+        $this->assertDatabaseHas('supplier_products', ['id' => $product->id, 'min_quantity_value' => null]);
     }
 
     public function test_supplier_product_uses_the_image_gallery_component(): void

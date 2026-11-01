@@ -107,6 +107,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Modules/BestPrices/Filament/Pages'), for: 'App\Modules\BestPrices\Filament\Pages')
             ->discoverPages(in: app_path('Modules/Supermarkets/Filament/Pages'), for: 'App\Modules\Supermarkets\Filament\Pages')
             ->discoverPages(in: app_path('Modules/MarketComparison/Filament/Pages'), for: 'App\Modules\MarketComparison\Filament\Pages')
+            ->discoverPages(in: app_path('Modules/Suppliers/Filament/Pages'), for: 'App\Modules\Suppliers\Filament\Pages')
             ->discoverPages(in: app_path('Modules/Reports/Filament/Pages'), for: 'App\Modules\Reports\Filament\Pages')
             ->pages([
                 TenantDashboard::class,

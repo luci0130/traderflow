@@ -116,7 +116,7 @@ class ListSupplierProducts extends ListRecords
                     'packaging_method_id' => $row['packaging_method_id'] ?? null,
                     'quantity_available' => $row['quantity_available'] ?? null,
                     'valid_until' => $row['valid_until'],
-                    'min_quantity_value' => $row['min_quantity_value'],
+                    'min_quantity_value' => $row['min_quantity_value'] ?? null,
                     'min_quantity_unit' => $row['min_quantity_unit'],
                     'unit_price' => $row['unit_price'],
                     'currency' => $row['currency'],
@@ -124,7 +124,7 @@ class ListSupplierProducts extends ListRecords
                 ]);
 
                 SupplierProductResource::replacePriceBreaks($product, [[
-                    'min_quantity_value' => $row['min_quantity_value'],
+                    'min_quantity_value' => $row['min_quantity_value'] ?? null,
                     'unit_price' => $row['unit_price'],
                 ]]);
 

@@ -2,17 +2,20 @@
 
 namespace App\Modules\BestPrices\Filament\Pages;
 
+use App\Models\Tenant;
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
-use App\Models\Tenant;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Queries\SupermarketBestPriceQuery;
 use App\Modules\MarketComparison\Services\SupermarketOfferBuilder;
 use App\Modules\ProductCategories\Models\ProductCategory;
+use App\Support\CreationDateTable;
 use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -41,7 +44,9 @@ use UnitEnum;
  */
 class BestPricesSupermarket extends Page implements HasTable
 {
-    use InteractsWithTable;
+    use InteractsWithTable {
+        handleTableFilterUpdates as protected updateTableFilters;
+    }
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingStorefront;
 
@@ -109,7 +114,7 @@ class BestPricesSupermarket extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $table
+        return CreationDateTable::configure($table, 'comparison_created_at')
             ->query(fn (): Builder => $this->getQuery())
             ->recordTitleAttribute('name')
             ->columns([
@@ -163,6 +168,7 @@ class BestPricesSupermarket extends Page implements HasTable
                     ->action(fn (CanonicalProduct $record) => $this->toggleSupermarkets($record->getKey())),
             ])
             ->filters([
+                ...CreationDateTable::filters(applyToQuery: false),
                 SelectFilter::make('product_category_id')
                     ->label(__('Category'))
                     ->options(fn (): array => ProductCategory::query()
@@ -266,7 +272,7 @@ class BestPricesSupermarket extends Page implements HasTable
                 })
                 ->maxLength(255),
             DatePicker::make('valid_until')
-                ->default(fn (): \Carbon\CarbonInterface => today()->addDays(7)),
+                ->default(fn (): CarbonInterface => today()->addDays(7)),
             Select::make('currency')
                 ->options(['EUR' => 'EUR', 'RON' => 'RON', 'USD' => 'USD', 'GBP' => 'GBP'])
                 ->default('RON'),
@@ -306,6 +312,12 @@ class BestPricesSupermarket extends Page implements HasTable
 
         $orderedIds = $this->shelfPriceOrderedIds();
 
+        $query = CreationDateTable::withComparedDates(
+            $query,
+            array_map(fn (?SupermarketPriceCandidate $candidate): ?string => $candidate?->price->created_at?->toDateTimeString(), $this->bestCandidateCache),
+            CreationDateTable::bounds($this->tableFilters) !== [null, null],
+        )->with('category');
+
         if ($orderedIds !== []) {
             $caseExpression = 'CASE id';
 
@@ -343,9 +355,35 @@ class BestPricesSupermarket extends Page implements HasTable
                 'price_excl_vat' => $candidate->priceExclVat,
                 'currency' => $candidate->currency,
                 'observed_at' => $candidate->observedAt,
+                'created_at' => $candidate->price->created_at?->toDateTimeString(),
                 'is_promo' => $candidate->isPromo,
             ])
             ->all();
+    }
+
+    /**
+     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, supermarkets: Collection<int, array<string, mixed>>, best_price: float}>
+     */
+    public function supermarketWeeks(int $canonicalId): Collection
+    {
+        $currentWeek = CarbonImmutable::now()->startOfWeek(CarbonInterface::MONDAY);
+
+        return collect($this->expandedCanonicalIds[$canonicalId] ?? [])
+            ->groupBy(fn (array $supermarket): string => filled($supermarket['created_at'])
+                ? CarbonImmutable::parse($supermarket['created_at'])->startOfWeek(CarbonInterface::MONDAY)->toDateString()
+                : '')
+            ->sortKeysDesc()
+            ->map(function (Collection $supermarkets, string $weekStart) use ($currentWeek): array {
+                $start = $weekStart !== '' ? CarbonImmutable::parse($weekStart) : null;
+
+                return [
+                    'week_number' => $start !== null ? (int) $start->diffInWeeks($currentWeek) + 1 : null,
+                    'start' => $start?->translatedFormat('j M'),
+                    'end' => $start?->addDays(6)->translatedFormat('j M Y'),
+                    'supermarkets' => $supermarkets,
+                    'best_price' => (float) $supermarkets->max('gross_price'),
+                ];
+            });
     }
 
     /**
@@ -400,8 +438,19 @@ class BestPricesSupermarket extends Page implements HasTable
      */
     protected function candidates(CanonicalProduct $canonicalProduct): Collection
     {
+        [$createdFrom, $createdBefore] = CreationDateTable::bounds($this->tableFilters);
+
         return $this->candidatesCache[$canonicalProduct->getKey()] ??= app(SupermarketBestPriceQuery::class)
-            ->candidatesFor($canonicalProduct);
+            ->candidatesFor($canonicalProduct, createdFrom: $createdFrom, createdBefore: $createdBefore);
+    }
+
+    protected function handleTableFilterUpdates(): void
+    {
+        $this->bestCandidateCache = [];
+        $this->candidatesCache = [];
+        $this->expandedCanonicalIds = [];
+        $this->selectedSupermarketByCanonical = [];
+        $this->updateTableFilters();
     }
 
     protected function bestCandidate(CanonicalProduct $canonicalProduct): ?SupermarketPriceCandidate

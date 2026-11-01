@@ -3,15 +3,18 @@
 namespace App\Modules\BestPrices\Filament\Pages;
 
 use App\Modules\Customers\Models\Customer;
-use App\Modules\MarketComparison\Filament\Concerns\CreatesCustomerOfferFromSelection;
 use App\Modules\MarketComparison\Data\SupplierPriceCandidate;
+use App\Modules\MarketComparison\Filament\Concerns\CreatesCustomerOfferFromSelection;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Queries\SupplierBestPriceQuery;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Suppliers\Models\Supplier;
 use App\Support\Countries;
+use App\Support\CreationDateTable;
 use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
@@ -38,7 +41,9 @@ use UnitEnum;
 class BestPricesSuppliers extends Page implements HasTable
 {
     use CreatesCustomerOfferFromSelection;
-    use InteractsWithTable;
+    use InteractsWithTable {
+        handleTableFilterUpdates as protected updateTableFilters;
+    }
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTruck;
 
@@ -106,7 +111,7 @@ class BestPricesSuppliers extends Page implements HasTable
 
     public function table(Table $table): Table
     {
-        return $table
+        return CreationDateTable::configure($table, 'comparison_created_at')
             ->query(fn (): Builder => $this->getQuery())
             ->recordTitleAttribute('name')
             ->columns([
@@ -158,6 +163,7 @@ class BestPricesSuppliers extends Page implements HasTable
                     ->action(fn (CanonicalProduct $record) => $this->toggleSuppliers($record->getKey())),
             ])
             ->filters([
+                ...CreationDateTable::filters(applyToQuery: false),
                 SelectFilter::make('product_category_id')
                     ->label(__('Category'))
                     ->options(fn (): array => ProductCategory::query()
@@ -276,6 +282,12 @@ class BestPricesSuppliers extends Page implements HasTable
 
         $orderedIds = $this->landedCostOrderedIds();
 
+        $query = CreationDateTable::withComparedDates(
+            $query,
+            array_map(fn (?SupplierPriceCandidate $candidate): ?string => $candidate?->supplierProduct->created_at?->toDateTimeString(), $this->bestCandidateCache),
+            CreationDateTable::bounds($this->tableFilters) !== [null, null],
+        )->with('category');
+
         if ($orderedIds !== []) {
             $caseExpression = 'CASE id';
 
@@ -314,8 +326,34 @@ class BestPricesSuppliers extends Page implements HasTable
                 'currency' => $candidate->currency,
                 'quantity' => $candidate->quantityAvailable,
                 'valid_until' => $candidate->validUntil,
+                'created_at' => $candidate->supplierProduct->created_at?->toDateTimeString(),
             ])
             ->all();
+    }
+
+    /**
+     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, suppliers: Collection<int, array<string, mixed>>, best_price: float}>
+     */
+    public function supplierWeeks(int $canonicalId): Collection
+    {
+        $currentWeek = CarbonImmutable::now()->startOfWeek(CarbonInterface::MONDAY);
+
+        return collect($this->expandedCanonicalIds[$canonicalId] ?? [])
+            ->groupBy(fn (array $supplier): string => filled($supplier['created_at'])
+                ? CarbonImmutable::parse($supplier['created_at'])->startOfWeek(CarbonInterface::MONDAY)->toDateString()
+                : '')
+            ->sortKeysDesc()
+            ->map(function (Collection $suppliers, string $weekStart) use ($currentWeek): array {
+                $start = $weekStart !== '' ? CarbonImmutable::parse($weekStart) : null;
+
+                return [
+                    'week_number' => $start !== null ? (int) $start->diffInWeeks($currentWeek) + 1 : null,
+                    'start' => $start?->translatedFormat('j M'),
+                    'end' => $start?->addDays(6)->translatedFormat('j M Y'),
+                    'suppliers' => $suppliers,
+                    'best_price' => (float) $suppliers->min('unit_price'),
+                ];
+            });
     }
 
     /**
@@ -370,8 +408,19 @@ class BestPricesSuppliers extends Page implements HasTable
      */
     protected function candidates(CanonicalProduct $canonicalProduct): Collection
     {
+        [$createdFrom, $createdBefore] = CreationDateTable::bounds($this->tableFilters);
+
         return $this->candidatesCache[$canonicalProduct->getKey()] ??= app(SupplierBestPriceQuery::class)
-            ->candidatesFor($canonicalProduct);
+            ->candidatesFor($canonicalProduct, $createdFrom, $createdBefore);
+    }
+
+    protected function handleTableFilterUpdates(): void
+    {
+        $this->bestCandidateCache = [];
+        $this->candidatesCache = [];
+        $this->expandedCanonicalIds = [];
+        $this->selectedSupplierByCanonical = [];
+        $this->updateTableFilters();
     }
 
     protected function bestCandidate(CanonicalProduct $canonicalProduct): ?SupplierPriceCandidate

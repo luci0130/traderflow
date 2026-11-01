@@ -150,6 +150,51 @@ class SupplierProductResourceTest extends TestCase
         $this->assertSame([4.5, 4.1], $product->prices()->pluck('unit_price')->map(fn (string $value): float => (float) $value)->all());
     }
 
+    public function test_quick_create_without_moq_preserves_null_and_creates_no_price_tier(): void
+    {
+        $this->actingAs($this->producerUser);
+
+        Livewire::test(ListSupplierProducts::class)
+            ->set('quickProducts.rows', [[
+                'name' => 'Mere fără MOQ',
+                'valid_until' => today()->addWeeks(2)->toDateString(),
+                'min_quantity_unit' => 'kg',
+                'currency' => 'EUR',
+                'unit_price' => '2.50',
+            ]])
+            ->call('createQuickProducts')
+            ->assertHasNoErrors();
+
+        $product = SupplierProduct::query()->where('name', 'Mere fără MOQ')->sole();
+        $this->assertNull($product->min_quantity_value);
+        $this->assertSame('2.5000', $product->unit_price);
+        $this->assertCount(0, $product->prices);
+        $this->assertDatabaseHas('supplier_products', ['id' => $product->id, 'min_quantity_value' => null]);
+    }
+
+    public function test_advanced_edit_keeps_unknown_moq_optional_without_creating_a_tier(): void
+    {
+        $product = SupplierProduct::create([
+            'producer_id' => $this->producer->id,
+            'name' => 'Mere fără MOQ',
+            'min_quantity_unit' => 'kg',
+            'currency' => 'EUR',
+            'unit_price' => 2.5,
+            'valid_until' => today()->addWeeks(2),
+        ]);
+        $this->actingAs($this->producerUser);
+
+        Livewire::test(ListSupplierProducts::class)
+            ->callTableAction('advanced', $product, ['name' => 'Mere actualizate'])
+            ->assertHasNoTableActionErrors();
+
+        $product->refresh();
+        $this->assertSame('Mere actualizate', $product->name);
+        $this->assertNull($product->min_quantity_value);
+        $this->assertSame('2.5000', $product->unit_price);
+        $this->assertCount(0, $product->prices);
+    }
+
     public function test_producer_panel_home_url_opens_my_products(): void
     {
         $this->actingAs($this->producerUser);

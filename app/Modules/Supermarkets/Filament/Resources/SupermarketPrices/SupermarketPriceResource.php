@@ -8,6 +8,7 @@ use App\Modules\Supermarkets\Filament\Resources\SupermarketPrices\Pages\EditSupe
 use App\Modules\Supermarkets\Filament\Resources\SupermarketPrices\Pages\ListSupermarketPrices;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
+use App\Support\CreationDateTable;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -112,7 +113,7 @@ class SupermarketPriceResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table
+        return CreationDateTable::configure($table)
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('product'))
             ->columns([
                 TextColumn::make('observed_at')
@@ -158,6 +159,7 @@ class SupermarketPriceResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                ...CreationDateTable::filters(),
                 SelectFilter::make('supermarket_id')
                     ->label('Supermarket')
                     ->relationship('supermarket', 'name')

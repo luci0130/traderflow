@@ -168,8 +168,7 @@ class SupplierProductResource extends Resource
                         ->numeric()
                         ->step('0.0001')
                         ->minValue(0)
-                        ->suffix(fn (Get $get): string => static::unitSuffix($get))
-                        ->required(),
+                        ->suffix(fn (Get $get): string => static::unitSuffix($get)),
                     TextInput::make('unit_price')
                         ->label(__('Price per unit'))
                         ->numeric()
@@ -261,8 +260,7 @@ class SupplierProductResource extends Resource
                 ->numeric()
                 ->step('0.0001')
                 ->minValue(0)
-                ->suffix(fn (Get $get): string => static::unitSuffix($get))
-                ->required(),
+                ->suffix(fn (Get $get): string => static::unitSuffix($get)),
             TextInput::make('unit_price')
                 ->label(__('Price per unit'))
                 ->numeric()
@@ -488,10 +486,10 @@ class SupplierProductResource extends Resource
                                 'min_quantity_value' => $price->min_quantity_value,
                                 'unit_price' => $price->unit_price,
                             ])->all()
-                            : [[
+                            : (filled($record->min_quantity_value) ? [[
                                 'min_quantity_value' => $record->min_quantity_value,
                                 'unit_price' => $record->unit_price,
-                            ]],
+                            ]] : []),
                     ])
                     ->schema(fn (Schema $schema): Schema => $schema->components(static::productFormComponents(includePriceBreaks: true)))
                     ->action(function (SupplierProduct $record, array $data): void {

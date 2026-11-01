@@ -13,6 +13,7 @@ use App\Modules\Suppliers\Filament\Resources\SupplierProducts\Pages\ListSupplier
 use App\Modules\Suppliers\Models\Supplier;
 use App\Modules\Units\Models\Unit;
 use App\Support\Countries;
+use App\Support\CreationDateTable;
 use BackedEnum;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -34,9 +35,11 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Turiac\FilamentImageGallery\Forms\Components\ImageGallery;
@@ -191,8 +194,7 @@ class SupplierProductResource extends Resource
                         ->label(__('Minimum quantity'))
                         ->numeric()
                         ->step('0.0001')
-                        ->minValue(0)
-                        ->required(),
+                        ->minValue(0),
                     TextInput::make('unit_price')
                         ->label(__('Price per unit'))
                         ->numeric()
@@ -376,12 +378,16 @@ class SupplierProductResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('imageGalleries.images.roles'))
+        return CreationDateTable::configure($table)
+            ->extraAttributes(['class' => 'fi-supplier-products-table'])
+            ->content(fn (HasTable $livewire): ?View => $livewire->getTableGrouping()
+                ? view('filament.supplier-products.grouped-table')
+                : null)
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['supplier', 'imageGalleries.images.roles']))
             ->columns([
-                ImageColumn::make('display_image_path')->label(__('Photo'))->disk('public')->square()->size(48),
+                ImageColumn::make('display_image_path')->label(__('Photo'))->disk('public')->square()->size(48)->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('supplier.name')->label(__('Supplier'))->searchable()->sortable(),
-                TextColumn::make('name')->label(__('Name'))->searchable()->sortable(),
+                TextColumn::make('name')->label(__('Product'))->searchable()->sortable(),
                 IconColumn::make('is_bio')
                     ->label(__('Bio'))
                     ->boolean()
@@ -389,7 +395,8 @@ class SupplierProductResource extends Resource
                     ->falseIcon(Heroicon::OutlinedMinusSmall)
                     ->trueColor('success')
                     ->falseColor('gray')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('packagingMethod.name')->label(__('Packaging'))->placeholder('-')->sortable()->toggleable(),
                 TextColumn::make('unit_price')->label(__('Price / unit'))->numeric(decimalPlaces: 2)->sortable(),
                 TextColumn::make('currency')->label(__('Currency'))->sortable()->toggleable(),
@@ -398,17 +405,19 @@ class SupplierProductResource extends Resource
                     ->numeric(decimalPlaces: 2)
                     ->suffix(fn (SupplierProduct $record): string => $record->min_quantity_unit ? ' '.$record->min_quantity_unit : '')
                     ->toggleable(),
-                TextColumn::make('prices_count')->label(__('Tiers'))->counts('prices')->sortable()->toggleable(),
-                TextColumn::make('valid_until')->label(__('Valid until'))->date()->sortable()->placeholder('-'),
+                TextColumn::make('prices_count')->label(__('Tiers'))->counts('prices')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('valid_until')->label(__('Valid until'))->date()->sortable()->placeholder('-')->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_offer_valid')
                     ->label(__('Active'))
                     ->boolean()
                     ->trueIcon(Heroicon::OutlinedCheckCircle)
                     ->falseIcon(Heroicon::OutlinedXCircle)
                     ->trueColor('success')
-                    ->falseColor('danger'),
+                    ->falseColor('danger')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                ...CreationDateTable::filters(),
                 SelectFilter::make('producer_id')
                     ->label(__('Supplier'))
                     ->relationship('supplier', 'name')

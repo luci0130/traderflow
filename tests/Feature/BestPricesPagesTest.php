@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Tenant;
 use App\Models\User;
-use App\Modules\BestPrices\Filament\Pages\BestPricesSuppliers;
 use App\Modules\BestPrices\Filament\Pages\BestPricesSupermarket;
+use App\Modules\BestPrices\Filament\Pages\BestPricesSuppliers;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
@@ -14,10 +14,12 @@ use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
 use App\Modules\Suppliers\Models\Supplier;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -82,6 +84,33 @@ class BestPricesPagesTest extends TestCase
 
         $page->toggleSuppliers($canonical->id);
         $this->assertArrayNotHasKey($canonical->id, $page->expandedCanonicalIds);
+    }
+
+    public function test_supplier_week_groups_preserve_selectable_rows_and_calendar_offsets(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-01-05 12:00:00'));
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Varza alba']);
+
+        foreach ([['2026-01-05', 5], ['2026-01-05', 3], ['2026-01-04', 2], ['2025-12-21', 8]] as $index => [$date, $price]) {
+            $this->attachSupplier($canonical, 'Supplier '.$index, landedCost: $price);
+            SupplierProduct::query()->latest('id')->first()->update(['created_at' => $date.' 12:00:00']);
+        }
+
+        $page = app(BestPricesSuppliers::class);
+        $page->toggleSuppliers($canonical->id);
+        $weeks = $page->supplierWeeks($canonical->id);
+
+        $this->assertSame(['2026-01-05', '2025-12-29', '2025-12-15'], $weeks->keys()->all());
+        $this->assertSame([1, 2, 4], $weeks->pluck('week_number')->all());
+        $this->assertCount(2, $weeks->first()['suppliers']);
+        $this->assertSame(3.0, $weeks->first()['best_price']);
+        $supplier = $weeks->first()['suppliers']->first();
+        $this->assertSame(3.0, $supplier['landed_cost']);
+        $this->assertSame(100.0, $supplier['quantity']);
+        $page->toggleSupplierCandidate($canonical->id, $supplier['id']);
+        $page->toggleSuppliers($canonical->id);
+        $page->toggleSuppliers($canonical->id);
+        $this->assertTrue($page->isSupplierCandidateSelected($canonical->id, $supplier['id']));
     }
 
     public function test_suppliers_page_toggle_exposes_candidate_id_for_selection(): void
@@ -178,6 +207,139 @@ class BestPricesPagesTest extends TestCase
         $this->assertSame('Kaufland', $breakdown[1]['name']);
     }
 
+    public function test_supermarket_week_groups_preserve_prices_selection_and_calendar_offsets(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-01-05 12:00:00'));
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Mere Gala']);
+
+        foreach ([['2026-01-05', 8], ['2026-01-05', 11], ['2026-01-04', 20], ['2025-12-21', 6]] as $index => [$date, $price]) {
+            $this->attachSupermarketPrice($canonical, 'Market '.$index, grossPrice: $price);
+            SupermarketPrice::query()->latest('id')->firstOrFail()->update(['created_at' => $date.' 12:00:00']);
+        }
+
+        $page = app(BestPricesSupermarket::class);
+        $this->assertTrue($page->supermarketWeeks($canonical->id)->isEmpty());
+
+        $page->toggleSupermarkets($canonical->id);
+        $weeks = $page->supermarketWeeks($canonical->id);
+
+        $this->assertSame(['2026-01-05', '2025-12-29', '2025-12-15'], $weeks->keys()->all());
+        $this->assertSame([1, 2, 4], $weeks->pluck('week_number')->all());
+        $this->assertSame([11.0, 20.0, 6.0], $weeks->pluck('best_price')->all());
+        $this->assertSame(['Market 1', 'Market 0'], $weeks->first()['supermarkets']->pluck('name')->all());
+        $candidate = $weeks->first()['supermarkets']->first();
+        $this->assertSame(11.0, $candidate['gross_price']);
+        $this->assertSame(11.0, $candidate['price_excl_vat']);
+        $this->assertSame('2026-01-05', $candidate['observed_at']);
+
+        $page->toggleSupermarketCandidate($canonical->id, $candidate['id']);
+        $page->toggleSupermarkets($canonical->id);
+        $this->assertTrue($page->supermarketWeeks($canonical->id)->isEmpty());
+        $page->toggleSupermarkets($canonical->id);
+        $this->assertTrue($page->isSupermarketCandidateSelected($canonical->id, $candidate['id']));
+    }
+
+    public function test_supermarket_breakdown_renders_each_week_with_its_own_ranked_prices(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-01-05 12:00:00'));
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+        $this->actingAs($user);
+        Filament::setTenant($tenant);
+        $this->grantSupermarketPageAccess($user, $tenant);
+
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Mere Gala']);
+        foreach ([
+            ['Current cheaper', '2026-01-05', 8],
+            ['Current highest', '2026-01-05', 11],
+            ['Current tied', '2026-01-05', 11],
+            ['Previous highest', '2026-01-04', 20],
+        ] as [$name, $date, $price]) {
+            $this->attachSupermarketPrice($canonical, $name, grossPrice: $price);
+            SupermarketPrice::query()->latest('id')->firstOrFail()->update(['created_at' => $date.' 12:00:00']);
+        }
+
+        $page = Livewire::test(BestPricesSupermarket::class)
+            ->call('toggleSupermarkets', $canonical->id)
+            ->assertSuccessful()
+            ->assertSee('WK1')
+            ->assertSee('WK2');
+
+        $document = new \DOMDocument;
+        @$document->loadHTML('<?xml encoding="UTF-8">'.$page->html());
+        $xpath = new \DOMXPath($document);
+        $weeks = $xpath->query('//div[contains(@class, "fi-best-prices-supermarket-breakdown")]/details');
+
+        $this->assertCount(2, $weeks);
+        $this->assertTrue($weeks->item(0)->hasAttribute('open'));
+        $this->assertFalse($weeks->item(1)->hasAttribute('open'));
+        $this->assertTrue($weeks->item(0)->hasAttribute('wire:ignore.self'));
+        $this->assertStringContainsString('WK1', $xpath->query('./summary', $weeks->item(0))->item(0)->textContent);
+        $this->assertStringContainsString('WK2', $xpath->query('./summary', $weeks->item(1))->item(0)->textContent);
+        $currentRows = $xpath->query('.//tbody/tr', $weeks->item(0));
+        $this->assertCount(3, $currentRows);
+        $this->assertStringContainsString(__('Most expensive'), $currentRows->item(0)->textContent);
+        $this->assertStringContainsString(__('Most expensive'), $currentRows->item(1)->textContent);
+        $this->assertStringNotContainsString(__('Most expensive'), $currentRows->item(2)->textContent);
+        $this->assertStringContainsString('Current cheaper', $currentRows->item(2)->textContent);
+        $previousRows = $xpath->query('.//tbody/tr', $weeks->item(1));
+        $this->assertCount(1, $previousRows);
+        $this->assertStringContainsString('Previous highest', $previousRows->item(0)->textContent);
+        $this->assertStringContainsString(__('Most expensive'), $previousRows->item(0)->textContent);
+    }
+
+    public function test_supermarket_breakdown_without_prices_has_no_week_groups(): void
+    {
+        $canonical = CanonicalProduct::factory()->create();
+        $page = app(BestPricesSupermarket::class);
+        $page->toggleSupermarkets($canonical->id);
+
+        $this->assertSame([], $page->expandedCanonicalIds[$canonical->id]);
+        $this->assertTrue($page->supermarketWeeks($canonical->id)->isEmpty());
+    }
+
+    #[DataProvider('undatedComparisonPages')]
+    public function test_undated_comparison_prices_render_without_inventing_a_creation_week(string $pageClass, string $toggleMethod, string $weeksMethod, string $rowsKey): void
+    {
+        $tenant = Tenant::create(['name' => 'Tenant A']);
+        $user = User::factory()->create();
+        $tenant->users()->attach($user);
+        $this->actingAs($user);
+        Filament::setTenant($tenant);
+        $this->grantSupermarketPageAccess($user, $tenant);
+        $canonical = CanonicalProduct::factory()->create(['name' => 'Mere']);
+
+        if ($pageClass === BestPricesSuppliers::class) {
+            $this->attachSupplier($canonical, 'Supplier A', landedCost: 4.0);
+            SupplierProduct::query()->latest('id')->firstOrFail()->update(['created_at' => null]);
+        } else {
+            $this->attachSupermarketPrice($canonical, 'Market A', grossPrice: 4.0);
+            SupermarketPrice::query()->latest('id')->firstOrFail()->update(['created_at' => null]);
+        }
+
+        $test = Livewire::test($pageClass)
+            ->call($toggleMethod, $canonical->id)
+            ->assertSuccessful()
+            ->assertSee(__('Without creation date'));
+        $weeks = $test->instance()->{$weeksMethod}($canonical->id);
+
+        $this->assertSame([''], $weeks->keys()->all());
+        $this->assertNull($weeks->first()['week_number']);
+        $this->assertNull($weeks->first()['start']);
+        $this->assertNull($weeks->first()['end']);
+        $this->assertCount(1, $weeks->first()[$rowsKey]);
+        $this->assertNull($weeks->first()[$rowsKey]->first()['created_at']);
+    }
+
+    public static function undatedComparisonPages(): array
+    {
+        return [
+            'suppliers' => [BestPricesSuppliers::class, 'toggleSuppliers', 'supplierWeeks', 'suppliers'],
+            'supermarkets' => [BestPricesSupermarket::class, 'toggleSupermarkets', 'supermarketWeeks', 'supermarkets'],
+        ];
+    }
+
     public function test_suppliers_page_renders_and_selects_a_supplier_through_livewire(): void
     {
         $tenant = Tenant::create(['name' => 'Tenant A']);
@@ -196,6 +358,13 @@ class BestPricesPagesTest extends TestCase
             ->call('toggleProductSelection', $canonical->id, $bestId)
             ->assertSet('selectedSupplierByCanonical', [$canonical->id => $bestId])
             ->call('toggleSuppliers', $canonical->id)
+            ->assertSee(__('Best'))
+            ->assertSee('WK1')
+            ->assertSee('toggleSupplierCandidate('.$canonical->id.', '.$bestId.')', escape: false)
+            ->call('toggleSupplierCandidate', $canonical->id, $bestId)
+            ->assertSet('selectedSupplierByCanonical', [])
+            ->call('toggleSupplierCandidate', $canonical->id, $bestId)
+            ->assertSet('selectedSupplierByCanonical', [$canonical->id => $bestId])
             ->assertSuccessful();
     }
 
@@ -217,6 +386,12 @@ class BestPricesPagesTest extends TestCase
             ->call('toggleProductSelection', $canonical->id, $bestId)
             ->assertSet('selectedSupermarketByCanonical', [$canonical->id => $bestId])
             ->call('toggleSupermarkets', $canonical->id)
+            ->assertSee(__('Most expensive'))
+            ->assertSee('toggleSupermarketCandidate('.$canonical->id.', '.$bestId.')', escape: false)
+            ->call('toggleSupermarketCandidate', $canonical->id, $bestId)
+            ->assertSet('selectedSupermarketByCanonical', [])
+            ->call('toggleSupermarketCandidate', $canonical->id, $bestId)
+            ->assertSet('selectedSupermarketByCanonical', [$canonical->id => $bestId])
             ->assertSuccessful();
     }
 
@@ -233,10 +408,12 @@ class BestPricesPagesTest extends TestCase
         $canonical = CanonicalProduct::factory()->create(['name' => 'Mere']);
         $this->attachSupplier($canonical, 'Supplier A', landedCost: 4.0);
         $bestId = SupplierProduct::query()->where('name', $canonical->name)->value('id');
+        $this->attachSupplier($canonical, 'Cheaper supplier', landedCost: 2.0);
         $customer = Customer::create(['name' => 'Client SRL', 'tenant_id' => $tenant->id]);
 
         Livewire::test(BestPricesSuppliers::class)
-            ->call('toggleProductSelection', $canonical->id, $bestId)
+            ->call('toggleSuppliers', $canonical->id)
+            ->call('toggleSupplierCandidate', $canonical->id, $bestId)
             ->callAction('createCustomerOffer', data: [
                 'customer_id' => $customer->id,
                 'currency' => 'EUR',
@@ -249,6 +426,10 @@ class BestPricesPagesTest extends TestCase
             'customer_id' => $customer->id,
             'tenant_id' => $tenant->id,
         ]);
+        $item = CustomerOffer::query()->latest('id')->first()->items()->first();
+        $this->assertNotNull($item);
+        $this->assertSame($bestId, $item->supplier_product_id);
+        $this->assertSame('4.0000', $item->purchase_price);
     }
 
     public function test_creating_a_supermarket_offer_uses_the_users_active_tenant_without_an_explicit_session_tenant(): void
@@ -262,13 +443,16 @@ class BestPricesPagesTest extends TestCase
         $canonical = CanonicalProduct::factory()->create(['name' => 'Visine']);
         $this->attachSupermarketPrice($canonical, 'Kaufland', grossPrice: 9.0);
         $bestId = SupermarketPrice::query()->value('id');
+        $this->attachSupermarketPrice($canonical, 'Higher price market', grossPrice: 12.0);
+        $this->attachSupplier($canonical, 'Supplier A', landedCost: 4.0);
         $supermarketId = Customer::query()->withoutGlobalScope('active_tenant')->global()->value('id');
 
         $this->actingAs($user);
         $this->grantSupermarketPageAccess($user, $tenant);
 
         Livewire::test(BestPricesSupermarket::class)
-            ->call('toggleProductSelection', $canonical->id, $bestId)
+            ->call('toggleSupermarkets', $canonical->id)
+            ->call('toggleSupermarketCandidate', $canonical->id, $bestId)
             ->callAction('createSupermarketOffer', data: [
                 'customer_id' => $supermarketId,
                 'currency' => 'EUR',
@@ -281,6 +465,9 @@ class BestPricesPagesTest extends TestCase
             'customer_id' => $supermarketId,
             'tenant_id' => $tenant->id,
         ]);
+        $item = CustomerOffer::query()->latest('id')->first()->items()->first();
+        $this->assertNotNull($item);
+        $this->assertSame('9.0000', $item->sale_price);
     }
 
     public function test_suppliers_offer_lines_expose_canonical_id_and_available_quantity(): void

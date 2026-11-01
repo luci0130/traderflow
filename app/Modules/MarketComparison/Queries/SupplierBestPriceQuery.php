@@ -6,6 +6,7 @@ use App\Modules\MarketComparison\Data\SupplierPriceCandidate;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Services\SupplierCostResolver;
 use App\Modules\Producers\Models\SupplierProduct;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -26,7 +27,7 @@ class SupplierBestPriceQuery
     /**
      * @return Collection<int, SupplierPriceCandidate>
      */
-    public function candidatesFor(CanonicalProduct $canonicalProduct): Collection
+    public function candidatesFor(CanonicalProduct $canonicalProduct, ?CarbonInterface $createdFrom = null, ?CarbonInterface $createdBefore = null): Collection
     {
         return $canonicalProduct->supplierProducts()
             ->with(['producer' => fn ($query) => $query->withoutGlobalScopes(), 'costOverride'])
@@ -37,6 +38,8 @@ class SupplierBestPriceQuery
                     ->orWhereDate('valid_until', '>=', today());
             })
             ->whereNotNull('unit_price')
+            ->when($createdFrom, fn (Builder $query): Builder => $query->where('supplier_products.created_at', '>=', $createdFrom))
+            ->when($createdBefore, fn (Builder $query): Builder => $query->where('supplier_products.created_at', '<', $createdBefore))
             ->get()
             ->map(fn (SupplierProduct $product): SupplierPriceCandidate => $this->toCandidate($product))
             ->sortBy([

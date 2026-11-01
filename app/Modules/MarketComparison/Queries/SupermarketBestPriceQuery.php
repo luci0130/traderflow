@@ -5,6 +5,7 @@ namespace App\Modules\MarketComparison\Queries;
 use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -26,7 +27,7 @@ class SupermarketBestPriceQuery
     /**
      * @return Collection<int, SupermarketPriceCandidate>
      */
-    public function candidatesFor(CanonicalProduct $canonicalProduct, int $recencyDays = self::DEFAULT_RECENCY_DAYS): Collection
+    public function candidatesFor(CanonicalProduct $canonicalProduct, int $recencyDays = self::DEFAULT_RECENCY_DAYS, ?CarbonInterface $createdFrom = null, ?CarbonInterface $createdBefore = null): Collection
     {
         return SupermarketPrice::query()
             ->with(['supermarket', 'product'])
@@ -35,6 +36,8 @@ class SupermarketBestPriceQuery
                 fn (Builder $query): Builder => $query->whereKey($canonicalProduct->getKey()),
             )
             ->whereDate('observed_at', '>=', today()->subDays($recencyDays))
+            ->when($createdFrom, fn (Builder $query): Builder => $query->where('created_at', '>=', $createdFrom))
+            ->when($createdBefore, fn (Builder $query): Builder => $query->where('created_at', '<', $createdBefore))
             ->get()
             ->groupBy(fn (SupermarketPrice $price): string => $this->supermarketKey($price))
             ->map(fn (Collection $prices): SupermarketPrice => $prices->sort($this->latestFirst(...))->first())
