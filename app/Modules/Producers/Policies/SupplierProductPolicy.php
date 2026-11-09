@@ -19,7 +19,8 @@ class SupplierProductPolicy
 
     public function view(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('View:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('View:SupplierProduct');
     }
 
     public function create(AuthUser $authUser): bool
@@ -29,12 +30,14 @@ class SupplierProductPolicy
 
     public function update(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('Update:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('Update:SupplierProduct');
     }
 
     public function delete(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('Delete:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('Delete:SupplierProduct');
     }
 
     public function deleteAny(AuthUser $authUser): bool
@@ -44,12 +47,14 @@ class SupplierProductPolicy
 
     public function restore(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('Restore:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('Restore:SupplierProduct');
     }
 
     public function forceDelete(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('ForceDelete:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('ForceDelete:SupplierProduct');
     }
 
     public function forceDeleteAny(AuthUser $authUser): bool
@@ -64,11 +69,18 @@ class SupplierProductPolicy
 
     public function replicate(AuthUser $authUser, SupplierProduct $supplierProduct): bool
     {
-        return $authUser->can('Replicate:SupplierProduct');
+        return $this->ownsProductOrIsOperator($authUser, $supplierProduct)
+            && $authUser->can('Replicate:SupplierProduct');
     }
 
     public function reorder(AuthUser $authUser): bool
     {
         return $authUser->can('Reorder:SupplierProduct');
+    }
+
+    private function ownsProductOrIsOperator(AuthUser $authUser, SupplierProduct $supplierProduct): bool
+    {
+        return $authUser->producer_id === null
+            || (int) $authUser->producer_id === (int) $supplierProduct->producer_id;
     }
 }

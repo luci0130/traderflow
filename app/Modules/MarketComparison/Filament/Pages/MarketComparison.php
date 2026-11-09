@@ -13,6 +13,9 @@ use App\Modules\MarketComparison\Services\MarketComparisonRowAssembler;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Suppliers\Models\Supplier;
 use App\Support\Countries;
+use App\Support\CountryFilter;
+use App\Support\Currency;
+use App\Support\PriceFormatter;
 use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -188,6 +191,7 @@ class MarketComparison extends Page implements HasTable
                     ->action(fn (CanonicalProduct $record) => $this->toggleBreakdown($record->getKey())),
             ])
             ->filters([
+                CountryFilter::make('country_of_origin'),
                 SelectFilter::make('product_category_id')
                     ->label(__('Category'))
                     ->options(fn (): array => ProductCategory::query()
@@ -551,7 +555,7 @@ class MarketComparison extends Page implements HasTable
             return '-';
         }
 
-        return ($supplier->supplierName ?? '?').': '.number_format($supplier->landedCost, 2).' '.$supplier->currency;
+        return ($supplier->supplierName ?? '?').': '.app(PriceFormatter::class)->format($supplier->landedCost, $supplier->currency);
     }
 
     protected function formatSupermarket(CanonicalProduct $record): string
@@ -562,7 +566,7 @@ class MarketComparison extends Page implements HasTable
             return '-';
         }
 
-        return ($supermarket->supermarketName ?? '?').': '.number_format($supermarket->grossPrice, 2).' '.$supermarket->currency;
+        return ($supermarket->supermarketName ?? '?').': '.app(PriceFormatter::class)->format($supermarket->grossPrice, $supermarket->currency);
     }
 
     protected function formatMargin(CanonicalProduct $record): string
@@ -575,7 +579,7 @@ class MarketComparison extends Page implements HasTable
 
         $suffix = $percent !== null ? ' ('.number_format($percent, 1).'%)' : '';
 
-        return number_format($margin, 2).$suffix;
+        return app(PriceFormatter::class)->format($margin, Currency::preferred(), showOriginal: false).$suffix;
     }
 
     protected function marginColor(CanonicalProduct $record): string
@@ -600,15 +604,7 @@ class MarketComparison extends Page implements HasTable
         $supplier = $this->chosenSupplierCandidate($record);
         $supermarket = $this->assembleRow($record)->bestSupermarket;
 
-        if ($supplier === null || $supermarket === null) {
-            return [null, null];
-        }
-
-        $sellPrice = $supermarket->priceExclVat ?? $supermarket->grossPrice;
-        $margin = round($sellPrice - $supplier->landedCost, 4);
-        $percent = $supplier->landedCost > 0 ? round(($margin / $supplier->landedCost) * 100, 2) : null;
-
-        return [$margin, $percent];
+        return app(MarketComparisonRowAssembler::class)->margin($supplier, $supermarket);
     }
 
     /**

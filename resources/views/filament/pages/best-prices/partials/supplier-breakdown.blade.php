@@ -76,18 +76,17 @@
                                         </td>
                                         <td class="px-4 py-3">
                                             <span class="font-medium text-gray-950 dark:text-white">{{ $supplier['name'] ?? '-' }}</span>
-                                            @if ((float) $supplier['unit_price'] === $week['best_price'])
+                                            @if (app(\App\Support\ExchangeRate::class)->convert((float) $supplier['unit_price'], $supplier['currency'], $week['best_currency']) === $week['best_price'])
                                                 <span class="ml-1.5 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
                                                     {{ __('Best') }}
                                                 </span>
                                             @endif
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-right">
-                                            <span class="font-semibold tabular-nums text-gray-950 dark:text-white">{{ number_format((float) $supplier['landed_cost'], 2) }}</span>
-                                            <span class="text-xs text-gray-400">{{ $supplier['currency'] }}</span>
+                                            <x-price :amount="$supplier['landed_cost']" :currency="$supplier['currency']" class="font-semibold text-gray-950 dark:text-white" />
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-300">
-                                            {{ number_format((float) $supplier['unit_price'], 2) }} <span class="text-xs text-gray-400">{{ $supplier['currency'] }}</span>
+                                            <x-price :amount="$supplier['unit_price']" :currency="$supplier['currency']" />
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-300">
                                             {{ $supplier['quantity'] !== null ? number_format((float) $supplier['quantity'], 2) : '—' }}

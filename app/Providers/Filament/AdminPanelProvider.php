@@ -5,7 +5,6 @@ namespace App\Providers\Filament;
 use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\SetPermissionsTenant;
 use App\Modules\Dashboard\Filament\Pages\TenantDashboard;
-use App\Support\LocaleOptions;
 use App\Support\Tenancy\ActiveTenantMenuItems;
 use App\Support\TutorialCatalog;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
@@ -79,13 +78,16 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->userMenuItems([
                 ...ActiveTenantMenuItems::filamentUserMenuItems(),
-                ...LocaleOptions::filamentUserMenuItems(),
             ])
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn (): string => view('filament.tutorials-menu', [
                     'tutorials' => TutorialCatalog::forUser(auth()->user()),
                 ])->render(),
+            )
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn (): string => view('filament.preferences-menu')->render(),
             )
             ->colors([
                 'primary' => Color::Amber,

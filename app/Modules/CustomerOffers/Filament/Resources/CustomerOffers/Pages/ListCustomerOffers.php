@@ -3,6 +3,7 @@
 namespace App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\Pages;
 
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
+use App\Modules\CustomerOffers\Models\CustomerOffer;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
@@ -13,7 +14,8 @@ class ListCustomerOffers extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            CreateAction::make()
+                ->successRedirectUrl(fn (CustomerOffer $record): string => CustomerOfferResource::getUrl('edit', ['record' => $record])),
         ];
     }
 }

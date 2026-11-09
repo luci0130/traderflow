@@ -11,6 +11,8 @@ use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Suppliers\Models\Supplier;
 use App\Support\Countries;
 use App\Support\CreationDateTable;
+use App\Support\ExchangeRate;
+use App\Support\PriceFormatter;
 use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
 use Carbon\CarbonImmutable;
@@ -332,7 +334,7 @@ class BestPricesSuppliers extends Page implements HasTable
     }
 
     /**
-     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, suppliers: Collection<int, array<string, mixed>>, best_price: float}>
+     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, suppliers: Collection<int, array<string, mixed>>, best_price: float, best_currency: string}>
      */
     public function supplierWeeks(int $canonicalId): Collection
     {
@@ -345,13 +347,15 @@ class BestPricesSuppliers extends Page implements HasTable
             ->sortKeysDesc()
             ->map(function (Collection $suppliers, string $weekStart) use ($currentWeek): array {
                 $start = $weekStart !== '' ? CarbonImmutable::parse($weekStart) : null;
+                $best = $suppliers->sortBy(fn (array $supplier): float => app(ExchangeRate::class)->convert((float) $supplier['unit_price'], $supplier['currency'], 'RON') ?? INF)->first();
 
                 return [
                     'week_number' => $start !== null ? (int) $start->diffInWeeks($currentWeek) + 1 : null,
                     'start' => $start?->translatedFormat('j M'),
                     'end' => $start?->addDays(6)->translatedFormat('j M Y'),
                     'suppliers' => $suppliers,
-                    'best_price' => (float) $suppliers->min('unit_price'),
+                    'best_price' => (float) $best['unit_price'],
+                    'best_currency' => $best['currency'],
                 ];
             });
     }
@@ -436,7 +440,7 @@ class BestPricesSuppliers extends Page implements HasTable
             return '-';
         }
 
-        return number_format($candidate->landedCost, 2).' '.$candidate->currency;
+        return app(PriceFormatter::class)->format($candidate->landedCost, $candidate->currency);
     }
 
     protected function formatUnitPrice(CanonicalProduct $record): string
@@ -447,7 +451,7 @@ class BestPricesSuppliers extends Page implements HasTable
             return '-';
         }
 
-        return number_format($candidate->unitPrice, 2).' '.$candidate->currency;
+        return app(PriceFormatter::class)->format($candidate->unitPrice, $candidate->currency);
     }
 
     protected function formatQuantity(CanonicalProduct $record): string
@@ -471,7 +475,7 @@ class BestPricesSuppliers extends Page implements HasTable
     {
         return CanonicalProduct::query()
             ->get()
-            ->sortBy(fn (CanonicalProduct $canonicalProduct): float => $this->bestCandidate($canonicalProduct)?->landedCost ?? INF)
+            ->sortBy(fn (CanonicalProduct $canonicalProduct): float => ($candidate = $this->bestCandidate($canonicalProduct)) !== null ? (app(ExchangeRate::class)->convert($candidate->landedCost, $candidate->currency, 'RON') ?? INF) : INF)
             ->map(fn (CanonicalProduct $canonicalProduct): int => $canonicalProduct->getKey())
             ->values()
             ->all();

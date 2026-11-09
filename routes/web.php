@@ -1,9 +1,10 @@
 <?php
 
+use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\TutorialProgressController;
+use App\Http\Middleware\SetLocale;
 use App\Models\Tenant;
 use App\Modules\Dashboard\Support\DashboardScope;
-use App\Http\Middleware\SetLocale;
 use App\Support\Tenancy\ActiveTenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -25,6 +26,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Route::post('/preferences/currency/{currency}', CurrencyPreferenceController::class)->name('currency.switch');
+
     Route::post('/tutorials/complete', TutorialProgressController::class)->name('tutorials.complete');
 
     Route::get('/active-tenant/global', function (Request $request) {

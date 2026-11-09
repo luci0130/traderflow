@@ -63,7 +63,7 @@ class SupermarketPricesRoSeederTest extends TestCase
 
         $cherry = SupermarketProduct::query()
             ->where('name', 'Roșii Cherry')
-            ->where('origin', 'Turcia')
+            ->where('origin', 'TR')
             ->first();
 
         $this->assertNotNull($cherry);
@@ -74,7 +74,7 @@ class SupermarketPricesRoSeederTest extends TestCase
 
         $bulkTomato = SupermarketProduct::query()
             ->where('name', 'Roșii Rotundă normală')
-            ->where('origin', 'România')
+            ->where('origin', 'RO')
             ->first();
 
         $this->assertNotNull($bulkTomato);
@@ -88,7 +88,7 @@ class SupermarketPricesRoSeederTest extends TestCase
 
         $cucumber = SupermarketProduct::query()
             ->where('name', 'Castraveți Cornichon')
-            ->where('origin', 'România')
+            ->where('origin', 'RO')
             ->firstOrFail();
 
         $this->assertSame(3, $cucumber->prices()->count());

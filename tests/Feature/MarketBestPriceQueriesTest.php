@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CurrencyExchangeRate;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Models\SupplierCostDefault;
@@ -17,6 +18,76 @@ use Tests\TestCase;
 class MarketBestPriceQueriesTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        CurrencyExchangeRate::factory()->create();
+        CurrencyExchangeRate::factory()->inverse()->create();
+    }
+
+    public function test_supplier_candidates_are_ranked_after_currency_conversion(): void
+    {
+        $canonical = CanonicalProduct::factory()->create();
+        $supplier = Supplier::create(['name' => 'Mixed currencies']);
+        $eur = SupplierProduct::create(['producer_id' => $supplier->id, 'name' => 'EUR product', 'status' => 'active', 'unit_price' => 2, 'currency' => 'EUR']);
+        $ron = SupplierProduct::create(['producer_id' => $supplier->id, 'name' => 'RON product', 'status' => 'active', 'unit_price' => 6, 'currency' => 'RON']);
+        $canonical->supplierProducts()->attach([$eur->id, $ron->id]);
+
+        $candidates = app(SupplierBestPriceQuery::class)->candidatesFor($canonical);
+
+        $this->assertSame([$ron->id, $eur->id], $candidates->map(fn ($candidate): int => $candidate->supplierProduct->id)->all());
+        $this->assertSame(2.0, $candidates->last()->unitPrice);
+        $this->assertSame('EUR', $candidates->last()->currency);
+    }
+
+    public function test_supplier_prices_in_the_same_currency_remain_ranked_without_exchange_rates(): void
+    {
+        CurrencyExchangeRate::query()->delete();
+        $canonical = CanonicalProduct::factory()->create();
+        $supplier = Supplier::create(['name' => 'EUR supplier']);
+        $expensive = SupplierProduct::create([
+            'producer_id' => $supplier->id, 'name' => 'Expensive', 'status' => 'active', 'unit_price' => 10, 'currency' => 'EUR',
+        ]);
+        $cheap = SupplierProduct::create([
+            'producer_id' => $supplier->id, 'name' => 'Cheap', 'status' => 'active', 'unit_price' => 1, 'currency' => 'EUR',
+        ]);
+        $canonical->supplierProducts()->attach([$expensive->id, $cheap->id]);
+
+        $candidates = app(SupplierBestPriceQuery::class)->candidatesFor($canonical);
+
+        $this->assertSame([$cheap->id, $expensive->id], $candidates->map(fn ($candidate): int => $candidate->supplierProduct->id)->all());
+    }
+
+    public function test_supplier_costs_are_converted_into_the_product_currency_before_adding_them(): void
+    {
+        $canonical = CanonicalProduct::factory()->create();
+        $supplier = Supplier::create(['name' => 'Mixed cost currencies']);
+        SupplierCostDefault::create(['supplier_id' => $supplier->id, 'transport_cost' => 0.2, 'currency' => 'EUR']);
+        $product = SupplierProduct::create(['producer_id' => $supplier->id, 'name' => 'RON product', 'status' => 'active', 'unit_price' => 3, 'currency' => 'RON']);
+        $canonical->supplierProducts()->attach($product);
+
+        $candidate = app(SupplierBestPriceQuery::class)->bestFor($canonical);
+
+        $this->assertSame(3.0, $candidate->unitPrice);
+        $this->assertSame(4.0, $candidate->landedCost);
+        $this->assertSame('RON', $candidate->currency);
+        $this->assertSame('3.0000', $product->fresh()->unit_price);
+    }
+
+    public function test_supermarket_candidates_are_ranked_after_currency_conversion(): void
+    {
+        $canonical = CanonicalProduct::factory()->create();
+        $product = SupermarketProduct::factory()->create(['vat_rate' => 0]);
+        $canonical->supermarketProducts()->attach($product);
+        $eur = SupermarketPrice::factory()->create(['supermarket_product_id' => $product->id, 'price' => 3, 'currency' => 'EUR']);
+        $ron = SupermarketPrice::factory()->create(['supermarket_product_id' => $product->id, 'price' => 9, 'currency' => 'RON']);
+
+        $candidates = app(SupermarketBestPriceQuery::class)->candidatesFor($canonical);
+
+        $this->assertSame([$eur->id, $ron->id], $candidates->map(fn ($candidate): int => $candidate->price->id)->all());
+    }
 
     public function test_supplier_best_price_picks_the_lowest_landed_cost_not_the_lowest_unit_price(): void
     {

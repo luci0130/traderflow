@@ -5,6 +5,7 @@ namespace App\Modules\MarketComparison\Services;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItem;
 use App\Modules\CustomerOffers\Models\CustomerOfferItemSupplier;
+use App\Modules\CustomerOffers\Services\CustomerOfferCalculator;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
 use App\Modules\MarketComparison\Data\SupplierPriceCandidate;
@@ -12,8 +13,13 @@ use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Queries\SupermarketBestPriceQuery;
 use App\Modules\MarketComparison\Queries\SupplierBestPriceQuery;
 use App\Modules\Products\Models\Product;
+use App\Modules\Units\Models\Unit;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Builds a draft customer (supermarket) offer from market comparison rows. The
@@ -132,6 +138,61 @@ class SupermarketOfferBuilder
         });
     }
 
+    /**
+     * @param  array<int, list<int>>  $selection
+     */
+    public function appendSelection(CustomerOffer $offer, array $selection): void
+    {
+        Validator::make(['selection' => $selection], [
+            'selection' => ['required', 'array', 'min:1'],
+            'selection.*' => ['required', 'array', 'min:1', 'max:5'],
+            'selection.*.*' => ['required', 'integer', 'min:1', 'distinct'],
+        ])->validate();
+
+        DB::transaction(function () use ($offer, $selection): void {
+            $offer = CustomerOffer::query()->lockForUpdate()->findOrFail($offer->getKey());
+            Gate::authorize('update', $offer);
+            abort_if($offer->isLocked(), 403);
+
+            $products = CanonicalProduct::query()->whereKey(array_keys($selection))->get()->keyBy('id');
+            $unitId = Unit::query()->where('symbol', 'kg')->value('id');
+
+            foreach ($selection as $canonicalId => $supplierProductIds) {
+                $canonical = $products->get($canonicalId);
+                $candidates = $canonical === null ? collect() : $this->supplierBestPriceQuery->candidatesFor($canonical)
+                    ->keyBy(fn (SupplierPriceCandidate $candidate): int => $candidate->supplierProduct->getKey());
+
+                $ordered = [];
+
+                foreach ($supplierProductIds as $supplierProductId) {
+                    $candidate = $candidates->get($supplierProductId);
+
+                    if ($candidate === null) {
+                        throw ValidationException::withMessages([
+                            'selection' => __('A selected supplier product is unavailable. Refresh the table and try again.'),
+                        ]);
+                    }
+
+                    $ordered[] = $candidate;
+                }
+
+                $item = $offer->items()->whereHas('product', fn (Builder $query): Builder => $query->where('name', $canonical->name))->first();
+
+                if ($item === null) {
+                    $product = $this->resolveTenantProduct($canonical, $offer->tenant_id);
+                    $item = $this->createItem(
+                        $offer, $ordered[0], null, $product, self::SALE_FROM_PERCENTAGE,
+                        0, $offer->tenant_id, $this->combinedAvailability($ordered), $unitId,
+                    );
+                }
+
+                $this->attachSuppliers($item, $ordered);
+            }
+
+            app(CustomerOfferCalculator::class)->recalculateOffer($offer);
+        });
+    }
+
     private function createItem(
         CustomerOffer $customerOffer,
         SupplierPriceCandidate $supplierCandidate,
@@ -170,11 +231,18 @@ class SupermarketOfferBuilder
      */
     private function attachSuppliers(CustomerOfferItem $item, array $candidates): void
     {
-        foreach ($candidates as $index => $candidate) {
+        $existingIds = $item->suppliers()->pluck('supplier_product_id')->all();
+        $priority = (int) $item->suppliers()->max('priority');
+
+        foreach ($candidates as $candidate) {
+            if (in_array($candidate->supplierProduct->getKey(), $existingIds, true)) {
+                continue;
+            }
+
             $item->suppliers()->create([
                 'supplier_id' => $candidate->supplierProduct->producer_id,
                 'supplier_product_id' => $candidate->supplierProduct->getKey(),
-                'priority' => $index + 1,
+                'priority' => ++$priority,
                 'unit_price' => $candidate->unitPrice,
                 'currency' => $candidate->currency,
                 'quantity_available' => $candidate->quantityAvailable,

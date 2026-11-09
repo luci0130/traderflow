@@ -5,6 +5,8 @@ namespace App\Modules\Suppliers\Filament\Resources\Suppliers;
 use App\Models\Tenant;
 use App\Modules\Documents\Filament\RelationManagers\DocumentsRelationManager;
 use App\Modules\MarketComparison\Models\SupplierCostDefault;
+use App\Modules\Supermarkets\Filament\RelationManagers\SupermarketPricesRelationManager;
+use App\Modules\Supermarkets\Filament\RelationManagers\SupermarketProductsRelationManager;
 use App\Modules\Suppliers\Filament\Resources\Suppliers\Pages\CreateSupplier;
 use App\Modules\Suppliers\Filament\Resources\Suppliers\Pages\EditSupplier;
 use App\Modules\Suppliers\Filament\Resources\Suppliers\Pages\ListSuppliers;
@@ -14,6 +16,7 @@ use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\Products
 use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\ReviewsRelationManager;
 use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\UsersRelationManager;
 use App\Modules\Suppliers\Models\Supplier;
+use App\Support\CountryFilter;
 use App\Support\StatusColors;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
@@ -239,6 +242,7 @@ class SupplierResource extends Resource
                 TextColumn::make('status')->badge()->color(fn (?string $state): array => StatusColors::badge($state))->searchable()->sortable(),
             ])
             ->filters([
+                CountryFilter::make(),
                 SelectFilter::make('status')
                     ->options([
                         'active' => 'Active',
@@ -279,6 +283,8 @@ class SupplierResource extends Resource
     {
         return [
             ProductsRelationManager::class,
+            SupermarketProductsRelationManager::class,
+            SupermarketPricesRelationManager::class,
             ContactsRelationManager::class,
             UsersRelationManager::class,
             OrdersRelationManager::class,

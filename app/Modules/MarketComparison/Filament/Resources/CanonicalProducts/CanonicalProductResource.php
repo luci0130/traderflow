@@ -11,6 +11,7 @@ use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Modules\Products\Models\PackagingMethod;
 use App\Support\Countries;
+use App\Support\CountryFilter;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -176,6 +177,7 @@ class CanonicalProductResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                CountryFilter::make('country_of_origin'),
                 SelectFilter::make('product_category_id')
                     ->label(__('Category'))
                     ->options(fn (): array => static::categoryOptions())

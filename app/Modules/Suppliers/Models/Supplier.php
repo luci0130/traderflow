@@ -11,6 +11,9 @@ use App\Modules\MarketComparison\Models\SupplierReview;
 use App\Modules\Producers\Models\ProducerOrder;
 use App\Modules\Producers\Models\SupplierProduct;
 use App\Modules\SalesOrders\Models\SalesOrderItem;
+use App\Modules\Supermarkets\Models\SupermarketPrice;
+use App\Modules\Supermarkets\Models\SupermarketProduct;
+use App\Modules\Supermarkets\Models\SupermarketProductCompany;
 use App\Modules\SupplierOffers\Models\SupplierOffer;
 use App\Support\Tenancy\ActiveTenant;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,6 +21,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -80,6 +84,17 @@ class Supplier extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    public function supermarketProducts(): BelongsToMany
+    {
+        return $this->belongsToMany(SupermarketProduct::class, 'supermarket_product_companies', 'supplier_id')
+            ->using(SupermarketProductCompany::class)->withTimestamps();
+    }
+
+    public function supermarketPrices(): HasMany
+    {
+        return $this->hasMany(SupermarketPrice::class);
     }
 
     public function supplierOffers(): HasMany

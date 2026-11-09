@@ -5,6 +5,7 @@ namespace App\Modules\MarketComparison\Queries;
 use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
+use App\Support\ExchangeRate;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -18,6 +19,8 @@ use Illuminate\Support\Collection;
 class SupermarketBestPriceQuery
 {
     public const DEFAULT_RECENCY_DAYS = 60;
+
+    public function __construct(private ExchangeRate $exchangeRate) {}
 
     public function bestFor(CanonicalProduct $canonicalProduct, int $recencyDays = self::DEFAULT_RECENCY_DAYS): ?SupermarketPriceCandidate
     {
@@ -41,7 +44,7 @@ class SupermarketBestPriceQuery
             ->get()
             ->groupBy(fn (SupermarketPrice $price): string => $this->supermarketKey($price))
             ->map(fn (Collection $prices): SupermarketPrice => $prices->sort($this->latestFirst(...))->first())
-            ->sortByDesc(fn (SupermarketPrice $price): float => (float) $price->price)
+            ->sortByDesc(fn (SupermarketPrice $price): float => $this->exchangeRate->convert((float) $price->price, $price->currency, 'RON') ?? -INF)
             ->values()
             ->map(fn (SupermarketPrice $price): SupermarketPriceCandidate => $this->toCandidate($price));
     }

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CurrencyExchangeRate;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
@@ -33,6 +34,14 @@ use Tests\TestCase;
 class MarketComparisonPageTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        CurrencyExchangeRate::factory()->create();
+        CurrencyExchangeRate::factory()->inverse()->create();
+    }
 
     public function test_market_comparison_page_is_registered_as_a_filament_route(): void
     {
@@ -1165,6 +1174,71 @@ class MarketComparisonPageTest extends TestCase
         );
     }
 
+    public function test_mixed_currency_comparison_uses_the_user_preference_without_changing_source_prices(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+        $canonical = $this->canonicalWithPrices(supplierLanded: 2.0, supermarketGross: 15.0);
+        $supplierProduct = $canonical->supplierProducts()->first();
+        $supplierProduct->update(['unit_price' => 2, 'currency' => 'EUR']);
+        SupplierCostDefault::query()->update(['transport_cost' => 0]);
+
+        $row = app(MarketComparisonRowAssembler::class)->assemble($canonical);
+        $this->assertSame(5.0, $row->margin);
+        $this->assertSame(50.0, $row->marginPercent);
+
+        Livewire::test(MarketComparison::class)
+            ->assertSee('10.00 RON (2.00 €)')
+            ->assertSee('15.00 RON')
+            ->assertSee('5.00 RON (50.0%)')
+            ->call('toggleBreakdown', $canonical->id)
+            ->assertSee('10.00 RON (2.00 €)');
+
+        $user->forceFill(['preferred_currency' => 'EUR'])->save();
+        $row = app(MarketComparisonRowAssembler::class)->assemble($canonical);
+        $this->assertSame(1.0, $row->margin);
+        $this->assertSame(50.0, $row->marginPercent);
+
+        Livewire::test(MarketComparison::class)
+            ->assertSee('2.00 EUR')
+            ->assertSee('3.00 EUR (15.00 RON)')
+            ->assertSee('1.00 EUR (50.0%)');
+
+        $this->assertSame('EUR', $supplierProduct->fresh()->currency);
+        $this->assertSame('2.0000', $supplierProduct->fresh()->unit_price);
+        $this->assertSame('RON', SupermarketPrice::query()->first()->currency);
+        $this->assertSame('15.0000', SupermarketPrice::query()->first()->price);
+    }
+
+    public function test_chosen_supplier_margin_is_converted_before_comparison(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+        $canonical = $this->canonicalWithPrices(supplierLanded: 2.0, supermarketGross: 15.0);
+        $supplierProduct = $canonical->supplierProducts()->first();
+        $supplierProduct->update(['unit_price' => 2, 'currency' => 'EUR']);
+        SupplierCostDefault::query()->update(['transport_cost' => 0]);
+        $alternative = $this->attachSupplierProduct($canonical, 'Alternative supplier', 12);
+
+        Livewire::test(MarketComparison::class)
+            ->call('toggleSupplierPriority', $canonical->id, $alternative->id)
+            ->assertSee('3.00 RON (25.0%)');
+    }
+
+    public function test_market_page_contains_topbar_language_and_currency_selectors(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupermarketPrice', 'guard_name' => 'web']));
+
+        $this->get(MarketComparison::getUrl())
+            ->assertOk()
+            ->assertSee('Language: English')
+            ->assertSee('Display currency: RON');
+    }
+
     private function attachSupplierProduct(CanonicalProduct $canonical, string $supplierName, float $unitPrice): SupplierProduct
     {
         $supplier = Supplier::create(['name' => $supplierName]);
@@ -1193,7 +1267,7 @@ class MarketComparisonPageTest extends TestCase
         $canonical = CanonicalProduct::factory()->create(['name' => 'Portocale']);
 
         $supplier = Supplier::create(['name' => 'Ferma Verde SRL']);
-        SupplierCostDefault::create(['supplier_id' => $supplier->id, 'transport_cost' => 1]);
+        SupplierCostDefault::create(['supplier_id' => $supplier->id, 'transport_cost' => 1, 'currency' => 'RON']);
         $supplierProduct = SupplierProduct::create([
             'producer_id' => $supplier->id,
             'name' => 'Portocale Navel',
@@ -1233,6 +1307,7 @@ class MarketComparisonPageTest extends TestCase
         SupplierCostDefault::create([
             'supplier_id' => $supplier->id,
             'transport_cost' => 1,
+            'currency' => 'RON',
         ]);
         $supplierProduct = SupplierProduct::create([
             'producer_id' => $supplier->id,

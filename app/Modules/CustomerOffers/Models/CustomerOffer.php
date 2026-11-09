@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\Documents\Models\Document;
+use App\Modules\NumberSequences\Concerns\HasNumberSequence;
 use App\Modules\SalesOrders\Models\SalesOrder;
 use App\Modules\SupplierOffers\Models\SupplierOffer;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class CustomerOffer extends Model
 {
-    use \App\Modules\NumberSequences\Concerns\HasNumberSequence, BelongsToTenant, HasFactory;
+    use BelongsToTenant, HasFactory, HasNumberSequence;
 
     protected $guarded = [];
 
@@ -30,6 +31,11 @@ class CustomerOffer extends Model
     public function numberSequenceColumn(): string
     {
         return 'offer_number';
+    }
+
+    public function isLocked(): bool
+    {
+        return $this->status === 'accepted' || $this->salesOrder()->exists();
     }
 
     /**

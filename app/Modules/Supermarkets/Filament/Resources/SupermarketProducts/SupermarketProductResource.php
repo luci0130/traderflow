@@ -12,6 +12,7 @@ use App\Modules\Supermarkets\Filament\Resources\SupermarketProducts\Pages\ListSu
 use App\Modules\Supermarkets\Models\SupermarketProduct;
 use App\Modules\Units\Models\Unit;
 use App\Support\Countries;
+use App\Support\CountryFilter;
 use BackedEnum;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -395,6 +396,7 @@ class SupermarketProductResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                CountryFilter::make('origin'),
                 TernaryFilter::make('is_bio')->label('Bio'),
             ])
             ->recordActions([

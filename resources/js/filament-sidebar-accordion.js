@@ -17,33 +17,38 @@ const mainSidebarGroupLabels = () =>
         ),
     )
         .map((element) => element.dataset.groupLabel)
-        .filter((label) => label !== '' && label != null)
+        .filter((label) => label !== '' && label != null);
 
 const enforceAccordion = (store) => {
     if (!store || store.__accordionPatched) {
-        return
+        return;
     }
 
-    store.__accordionPatched = true
+    store.__accordionPatched = true;
 
     // Self-heal: earlier builds could persist the empty label of the ungrouped
     // group into collapsedGroups, hiding the Dashboard link. Drop it on load.
-    if (Array.isArray(store.collapsedGroups) && store.collapsedGroups.includes('')) {
-        store.collapsedGroups = store.collapsedGroups.filter((label) => label !== '')
+    if (
+        Array.isArray(store.collapsedGroups) &&
+        store.collapsedGroups.includes('')
+    ) {
+        store.collapsedGroups = store.collapsedGroups.filter(
+            (label) => label !== '',
+        );
     }
 
     store.toggleCollapsedGroup = function (group) {
-        const groupLabels = mainSidebarGroupLabels()
-        const isCurrentlyCollapsed = this.collapsedGroups.includes(group)
+        const groupLabels = mainSidebarGroupLabels();
+        const isCurrentlyCollapsed = this.collapsedGroups.includes(group);
 
         // Closing a group, or toggling something outside the main sidebar,
         // keeps Filament's default independent behaviour.
         if (!groupLabels.includes(group) || !isCurrentlyCollapsed) {
             this.collapsedGroups = isCurrentlyCollapsed
                 ? this.collapsedGroups.filter((label) => label !== group)
-                : this.collapsedGroups.concat(group)
+                : this.collapsedGroups.concat(group);
 
-            return
+            return;
         }
 
         // Opening a main sidebar group: collapse every other main group while
@@ -53,10 +58,10 @@ const enforceAccordion = (store) => {
                 (label) => !groupLabels.includes(label),
             ),
             ...groupLabels.filter((label) => label !== group),
-        ]
-    }
-}
+        ];
+    };
+};
 
 document.addEventListener('alpine:initialized', () => {
-    enforceAccordion(window.Alpine?.store('sidebar'))
-})
+    enforceAccordion(window.Alpine?.store('sidebar'));
+});

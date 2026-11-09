@@ -61,11 +61,17 @@ class CustomerOfferResource extends Resource
     /**
      * Whether the current user may see the sell side (sale price, margin, totals).
      * Purchasing agents work the buy/sourcing side of the same offer, so those
-     * columns/fields are hidden from them.
+     * columns/fields are hidden unless they also have a sales or super-admin role.
      */
     public static function showsSellSide(): bool
     {
-        return ! (auth()->user()?->isPurchasingAgent() ?? false);
+        $user = auth()->user();
+
+        if (($user?->isSuperAdmin() ?? false) || ($user?->isSalesAgent() ?? false)) {
+            return true;
+        }
+
+        return ! ($user?->isPurchasingAgent() ?? false);
     }
 
     public static function form(Schema $schema): Schema
@@ -73,6 +79,9 @@ class CustomerOfferResource extends Resource
         return $schema
             ->components([
                 Section::make('Offer')
+                    ->disabled(fn (?CustomerOffer $record): bool => $record?->isLocked() ?? false)
+                    ->description(fn (?CustomerOffer $record): ?string => ($record?->isLocked() ?? false)
+                        ? __('Accepted offers cannot be edited. Duplicate this offer to make changes.') : null)
                     ->collapsible()
                     ->collapsed()
                     ->schema([
@@ -154,7 +163,12 @@ class CustomerOfferResource extends Resource
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()
+                        ->before(function (DeleteBulkAction $action): void {
+                            abort_if($action->getSelectedRecords()->contains(
+                                fn (CustomerOffer $offer): bool => $offer->fresh()->isLocked(),
+                            ), 403);
+                        }),
                 ]),
             ]);
     }

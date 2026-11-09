@@ -3,9 +3,13 @@
 namespace App\Modules\MarketComparison\Services;
 
 use App\Modules\MarketComparison\Data\MarketComparisonRow;
+use App\Modules\MarketComparison\Data\SupermarketPriceCandidate;
+use App\Modules\MarketComparison\Data\SupplierPriceCandidate;
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\MarketComparison\Queries\SupermarketBestPriceQuery;
 use App\Modules\MarketComparison\Queries\SupplierBestPriceQuery;
+use App\Support\Currency;
+use App\Support\ExchangeRate;
 
 /**
  * Stitches the buy side (cheapest supplier) and the sell side (highest paying
@@ -17,6 +21,7 @@ class MarketComparisonRowAssembler
     public function __construct(
         private SupplierBestPriceQuery $supplierBestPriceQuery,
         private SupermarketBestPriceQuery $supermarketBestPriceQuery,
+        private ExchangeRate $exchangeRate,
     ) {}
 
     public function assemble(CanonicalProduct $canonicalProduct): MarketComparisonRow
@@ -24,17 +29,7 @@ class MarketComparisonRowAssembler
         $bestSupplier = $this->supplierBestPriceQuery->bestFor($canonicalProduct);
         $bestSupermarket = $this->supermarketBestPriceQuery->bestFor($canonicalProduct);
 
-        $margin = null;
-        $marginPercent = null;
-
-        if ($bestSupplier !== null && $bestSupermarket !== null) {
-            $sellPrice = $bestSupermarket->priceExclVat ?? $bestSupermarket->grossPrice;
-            $margin = round($sellPrice - $bestSupplier->landedCost, 4);
-
-            if ($bestSupplier->landedCost > 0) {
-                $marginPercent = round(($margin / $bestSupplier->landedCost) * 100, 2);
-            }
-        }
+        [$margin, $marginPercent] = $this->margin($bestSupplier, $bestSupermarket);
 
         return new MarketComparisonRow(
             canonicalProduct: $canonicalProduct,
@@ -43,5 +38,26 @@ class MarketComparisonRowAssembler
             margin: $margin,
             marginPercent: $marginPercent,
         );
+    }
+
+    /** @return array{0: float|null, 1: float|null} */
+    public function margin(?SupplierPriceCandidate $supplier, ?SupermarketPriceCandidate $supermarket): array
+    {
+        if ($supplier === null || $supermarket === null) {
+            return [null, null];
+        }
+
+        $currency = Currency::preferred();
+        $buyPrice = $this->exchangeRate->convert($supplier->landedCost, $supplier->currency, $currency);
+        $sellPrice = $this->exchangeRate->convert($supermarket->priceExclVat ?? $supermarket->grossPrice, $supermarket->currency, $currency);
+
+        if ($buyPrice === null || $sellPrice === null) {
+            return [null, null];
+        }
+
+        $margin = round($sellPrice - $buyPrice, 4);
+        $percent = $buyPrice > 0 ? round(($margin / $buyPrice) * 100, 2) : null;
+
+        return [$margin, $percent];
     }
 }

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test  } from '@playwright/test';
+import type {Page} from '@playwright/test';
 
 // Filament throttles repeated logins, so authenticate once and share the page
 // across this file rather than signing in per test.

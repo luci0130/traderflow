@@ -12,6 +12,8 @@ use App\Modules\MarketComparison\Queries\SupermarketBestPriceQuery;
 use App\Modules\MarketComparison\Services\SupermarketOfferBuilder;
 use App\Modules\ProductCategories\Models\ProductCategory;
 use App\Support\CreationDateTable;
+use App\Support\ExchangeRate;
+use App\Support\PriceFormatter;
 use App\Support\Tenancy\ActiveTenant;
 use BackedEnum;
 use Carbon\CarbonImmutable;
@@ -362,7 +364,7 @@ class BestPricesSupermarket extends Page implements HasTable
     }
 
     /**
-     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, supermarkets: Collection<int, array<string, mixed>>, best_price: float}>
+     * @return Collection<string, array{week_number: int|null, start: string|null, end: string|null, supermarkets: Collection<int, array<string, mixed>>, best_price: float, best_currency: string}>
      */
     public function supermarketWeeks(int $canonicalId): Collection
     {
@@ -375,13 +377,15 @@ class BestPricesSupermarket extends Page implements HasTable
             ->sortKeysDesc()
             ->map(function (Collection $supermarkets, string $weekStart) use ($currentWeek): array {
                 $start = $weekStart !== '' ? CarbonImmutable::parse($weekStart) : null;
+                $best = $supermarkets->sortByDesc(fn (array $supermarket): float => app(ExchangeRate::class)->convert((float) $supermarket['gross_price'], $supermarket['currency'], 'RON') ?? -INF)->first();
 
                 return [
                     'week_number' => $start !== null ? (int) $start->diffInWeeks($currentWeek) + 1 : null,
                     'start' => $start?->translatedFormat('j M'),
                     'end' => $start?->addDays(6)->translatedFormat('j M Y'),
                     'supermarkets' => $supermarkets,
-                    'best_price' => (float) $supermarkets->max('gross_price'),
+                    'best_price' => (float) $best['gross_price'],
+                    'best_currency' => $best['currency'],
                 ];
             });
     }
@@ -466,7 +470,7 @@ class BestPricesSupermarket extends Page implements HasTable
             return '-';
         }
 
-        return number_format($candidate->grossPrice, 2).' '.$candidate->currency;
+        return app(PriceFormatter::class)->format($candidate->grossPrice, $candidate->currency);
     }
 
     protected function formatExclVat(CanonicalProduct $record): string
@@ -477,7 +481,7 @@ class BestPricesSupermarket extends Page implements HasTable
             return '-';
         }
 
-        return number_format($candidate->priceExclVat, 2).' '.$candidate->currency;
+        return app(PriceFormatter::class)->format($candidate->priceExclVat, $candidate->currency);
     }
 
     /**
@@ -490,7 +494,7 @@ class BestPricesSupermarket extends Page implements HasTable
     {
         return CanonicalProduct::query()
             ->get()
-            ->sortByDesc(fn (CanonicalProduct $canonicalProduct): float => $this->bestCandidate($canonicalProduct)?->grossPrice ?? -INF)
+            ->sortByDesc(fn (CanonicalProduct $canonicalProduct): float => ($candidate = $this->bestCandidate($canonicalProduct)) !== null ? (app(ExchangeRate::class)->convert($candidate->grossPrice, $candidate->currency, 'RON') ?? -INF) : -INF)
             ->map(fn (CanonicalProduct $canonicalProduct): int => $canonicalProduct->getKey())
             ->values()
             ->all();

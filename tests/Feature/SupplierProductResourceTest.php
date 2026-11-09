@@ -249,7 +249,18 @@ class SupplierProductResourceTest extends TestCase
         $this->actingAs($this->producerUser);
 
         $this->assertTrue($this->producerUser->can('viewAny', SupplierProduct::class));
+        $this->assertFalse($this->producerUser->can('view', $foreign));
         $this->assertFalse($this->producerUser->can('update', $foreign));
         $this->assertFalse($this->producerUser->can('delete', $foreign));
+
+        $own = SupplierProduct::create([
+            'producer_id' => $this->producer->id,
+            'name' => 'Own Apples',
+            'status' => 'active',
+            'currency' => 'EUR',
+        ]);
+        $this->assertTrue($this->producerUser->can('view', $own));
+        $this->assertTrue($this->producerUser->can('update', $own));
+        $this->assertTrue($this->producerUser->can('delete', $own));
     }
 }

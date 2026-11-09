@@ -75,21 +75,20 @@
                                         </td>
                                         <td class="px-4 py-3">
                                             <span class="font-medium text-gray-950 dark:text-white">{{ $supermarket['name'] ?? '-' }}</span>
-                                            @if ((float) $supermarket['gross_price'] === $week['best_price'])
+                                            @if (app(\App\Support\ExchangeRate::class)->convert((float) $supermarket['gross_price'], $supermarket['currency'], $week['best_currency']) === $week['best_price'])
                                                 <span class="ml-1.5 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
                                                     {{ __('Most expensive') }}
                                                 </span>
                                             @endif
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-right">
-                                            <span class="font-semibold tabular-nums text-gray-950 dark:text-white">{{ number_format((float) $supermarket['gross_price'], 2) }}</span>
-                                            <span class="text-xs text-gray-400">{{ $supermarket['currency'] }}</span>
+                                            <x-price :amount="$supermarket['gross_price']" :currency="$supermarket['currency']" class="font-semibold text-gray-950 dark:text-white" />
                                             @if ($supermarket['is_promo'])
                                                 <span class="ml-0.5 text-amber-500" title="{{ __('Promo') }}">★</span>
                                             @endif
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-gray-600 dark:text-gray-300">
-                                            {{ $supermarket['price_excl_vat'] !== null ? number_format((float) $supermarket['price_excl_vat'], 2).' '.$supermarket['currency'] : '—' }}
+                                            <x-price :amount="$supermarket['price_excl_vat']" :currency="$supermarket['currency']" />
                                         </td>
                                         <td class="whitespace-nowrap px-4 py-3 text-gray-500 dark:text-gray-400">{{ $supermarket['observed_at'] ?? '—' }}</td>
                                     </tr>

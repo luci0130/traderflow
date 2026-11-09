@@ -15,3 +15,8 @@ Artisan::command('inspire', function () {
 Schedule::command('images:prune-orphans')
     ->cron('0 3 */10 * *')
     ->withoutOverlapping();
+
+Schedule::command('currency:refresh')
+    ->dailyAt('13:10')
+    ->timezone('Europe/Bucharest')
+    ->withoutOverlapping();

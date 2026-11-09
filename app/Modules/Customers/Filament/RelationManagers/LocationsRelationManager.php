@@ -3,6 +3,7 @@
 namespace App\Modules\Customers\Filament\RelationManagers;
 
 use App\Modules\Customers\Enums\CustomerLocationType;
+use App\Support\CountryFilter;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -132,6 +133,7 @@ class LocationsRelationManager extends RelationManager
                     ->toggleable(),
             ])
             ->filters([
+                CountryFilter::make('country'),
                 SelectFilter::make('type')
                     ->label(__('Type'))
                     ->options(CustomerLocationType::options()),

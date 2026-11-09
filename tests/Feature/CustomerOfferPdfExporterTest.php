@@ -168,7 +168,8 @@ class CustomerOfferPdfExporterTest extends TestCase
 
         $data = app(CustomerOfferPdfExporter::class)->buildViewData($offer);
 
-        $this->assertStringEndsWith('images/offer-pdf/banner.png', $data['banner']);
+        $this->assertSame(public_path('images/offer-pdf/banner.jpg'), $data['banner']);
+        $this->assertFileExists($data['banner']);
         $this->assertNull($data['signature']);
     }
 

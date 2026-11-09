@@ -101,5 +101,13 @@
     "Currently valid": "Aktuell gultig",
     "All": "Alle",
     "Valid": "Gultig",
-    "No parent": "Kein ubergeordnetes Element"
+    "No parent": "Kein ubergeordnetes Element",
+    "Language": "Sprache",
+    "Display currency": "Anzeigewährung",
+    "Exchange rate unavailable": "Wechselkurs nicht verfügbar",
+    "Exchange rate": "Wechselkurs",
+    "Exchange rates": "Wechselkurse",
+    "Base currency": "Basiswährung",
+    "Quote currency": "Kurswährung",
+    "Rate date": "Kursdatum"
 }

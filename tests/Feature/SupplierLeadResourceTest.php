@@ -63,23 +63,26 @@ class SupplierLeadResourceTest extends TestCase
         ]);
     }
 
-    public function test_a_lead_can_be_linked_to_a_supermarket_product(): void
+    public function test_a_lead_can_be_linked_to_multiple_supermarket_products(): void
     {
-        $product = SupermarketProduct::factory()->create();
+        $products = SupermarketProduct::factory()->count(2)->create();
 
         Livewire::test(CreateSupplierLead::class)
             ->fillForm([
                 'name' => 'Rosii de Buzau SRL',
-                'supermarket_product_id' => $product->id,
+                'supermarketProducts' => $products->modelKeys(),
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
         $this->assertDatabaseHas('supplier_leads', [
             'name' => 'Rosii de Buzau SRL',
-            'supermarket_product_id' => $product->id,
             'created_by' => $this->user->id,
         ]);
+
+        $lead = SupplierLead::query()->where('name', 'Rosii de Buzau SRL')->sole();
+        $this->assertSame($products->modelKeys(), $lead->supermarketProducts()->orderBy('supermarket_products.id')->pluck('supermarket_products.id')->all());
+        $this->assertDatabaseCount('supermarket_prices', 0);
     }
 
     public function test_converting_a_lead_creates_a_supplier_and_marks_it_converted(): void

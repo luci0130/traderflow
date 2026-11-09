@@ -4,6 +4,8 @@ namespace App\Modules\Supermarkets\Models;
 
 use App\Modules\MarketComparison\Models\CanonicalProduct;
 use App\Modules\Products\Models\PackagingMethod;
+use App\Modules\Suppliers\Models\Supplier;
+use App\Modules\Suppliers\Models\SupplierLead;
 use App\Support\CategoryImages;
 use App\Support\Countries;
 use Database\Factories\SupermarketProductFactory;
@@ -73,6 +75,18 @@ class SupermarketProduct extends Model
                 ? $this->image_path
                 : app(CategoryImages::class)->pathFor($this->category);
         });
+    }
+
+    public function supplierLeads(): BelongsToMany
+    {
+        return $this->belongsToMany(SupplierLead::class, 'supermarket_product_companies', 'supermarket_product_id')
+            ->using(SupermarketProductCompany::class)->withTimestamps();
+    }
+
+    public function suppliers(): BelongsToMany
+    {
+        return $this->belongsToMany(Supplier::class, 'supermarket_product_companies', 'supermarket_product_id')
+            ->using(SupermarketProductCompany::class)->withTimestamps();
     }
 
     public function prices(): HasMany

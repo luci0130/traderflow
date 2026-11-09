@@ -10,6 +10,13 @@ class EditSupermarketPrice extends EditRecord
 {
     protected static string $resource = SupermarketPriceResource::class;
 
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['company'] = $this->record->company;
+
+        return $data;
+    }
+
     protected function getHeaderActions(): array
     {
         return [

@@ -8,8 +8,14 @@ use App\Modules\Supermarkets\Filament\Resources\SupermarketPrices\Pages\EditSupe
 use App\Modules\Supermarkets\Filament\Resources\SupermarketPrices\Pages\ListSupermarketPrices;
 use App\Modules\Supermarkets\Models\SupermarketPrice;
 use App\Modules\Supermarkets\Models\SupermarketProduct;
+use App\Modules\Suppliers\Filament\Resources\SupplierLeads\SupplierLeadResource;
+use App\Modules\Suppliers\Models\Supplier;
+use App\Modules\Suppliers\Models\SupplierLead;
+use App\Support\Countries;
+use App\Support\CountryFilter;
 use App\Support\CreationDateTable;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -28,6 +34,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Gate;
 use UnitEnum;
 
 class SupermarketPriceResource extends Resource
@@ -60,6 +67,7 @@ class SupermarketPriceResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema
+            ->columns(['default' => 1, 'lg' => 3])
             ->components([
                 Section::make()
                     ->schema([
@@ -107,14 +115,52 @@ class SupermarketPriceResource extends Resource
                             ->default(SupermarketPrice::SOURCE_MANUAL)
                             ->required(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpan(['lg' => 2]),
+                Section::make(__('Producer / distributor'))
+                    ->description(__('Select the company identified on the product label, or add a supplier lead.'))
+                    ->schema([
+                        Select::make('company')
+                            ->label(__('Supplier lead or supplier'))
+                            ->placeholder(__('Unknown company'))
+                            ->options(fn (): array => static::companyOptions())
+                            ->searchable()
+                            ->createOptionForm(SupplierLeadResource::contactFields())
+                            ->createOptionAction(fn (Action $action): Action => $action
+                                ->label(__('Add supplier lead'))
+                                ->modalHeading(__('Add supplier lead'))
+                                ->authorize('create', SupplierLead::class)
+                                ->visible(fn (): bool => Gate::allows('create', SupplierLead::class)))
+                            ->createOptionUsing(function (array $data): string {
+                                Gate::authorize('create', SupplierLead::class);
+                                $lead = SupplierLead::create([...$data, 'created_by' => auth()->id()]);
+
+                                return 'lead:'.$lead->getKey();
+                            }),
+                    ])
+                    ->columnSpan(1),
             ]);
+    }
+
+    /** @return array<string, array<string, string>> */
+    public static function companyOptions(): array
+    {
+        return [
+            __('Supplier leads') => SupplierLead::query()->whereNull('converted_supplier_id')->orderBy('name')
+                ->get(['id', 'name', 'country'])->mapWithKeys(fn (SupplierLead $lead): array => [
+                    'lead:'.$lead->getKey() => $lead->name.(filled($lead->country) ? ' ('.Countries::label(Countries::normalize($lead->country)).')' : ''),
+                ])->all(),
+            __('Suppliers') => Supplier::query()->orderBy('name')->get(['id', 'name', 'country'])
+                ->mapWithKeys(fn (Supplier $supplier): array => [
+                    'supplier:'.$supplier->getKey() => $supplier->name.(filled($supplier->country) ? ' ('.Countries::label(Countries::normalize($supplier->country)).')' : ''),
+                ])->all(),
+        ];
     }
 
     public static function table(Table $table): Table
     {
         return CreationDateTable::configure($table)
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('product'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['product', 'supplierLead', 'supplier']))
             ->columns([
                 TextColumn::make('observed_at')
                     ->label('Observed')
@@ -128,6 +174,14 @@ class SupermarketPriceResource extends Resource
                     ->label('Product')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('supplier.name')
+                    ->label(__('Supplier'))->searchable()->placeholder('—'),
+                TextColumn::make('supplierLead.name')
+                    ->label(__('Supplier lead'))->searchable()->placeholder('—')->toggleable(),
+                TextColumn::make('product.origin')
+                    ->label(__('Country of origin'))
+                    ->formatStateUsing(fn (?string $state): ?string => Countries::label($state))
+                    ->placeholder('—')->toggleable(),
                 TextColumn::make('price')
                     ->label('Price incl. VAT')
                     ->numeric(decimalPlaces: 2)
@@ -160,6 +214,11 @@ class SupermarketPriceResource extends Resource
             ])
             ->filters([
                 ...CreationDateTable::filters(),
+                SelectFilter::make('supplier_lead_id')->label(__('Supplier lead'))
+                    ->relationship('supplierLead', 'name')->searchable()->preload(),
+                SelectFilter::make('supplier_id')->label(__('Supplier'))
+                    ->relationship('supplier', 'name')->searchable()->preload(),
+                CountryFilter::make('origin', 'product'),
                 SelectFilter::make('supermarket_id')
                     ->label('Supermarket')
                     ->relationship('supermarket', 'name')

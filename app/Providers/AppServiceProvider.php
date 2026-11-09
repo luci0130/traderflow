@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\User;
 use App\Support\CategoryImages;
+use App\Support\ExchangeRate;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Support\Assets\Js;
@@ -37,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
         // Shared across a request so a whole table render resolves category
         // fallback images with a single query.
         $this->app->singleton(CategoryImages::class);
+        $this->app->scoped(ExchangeRate::class);
     }
 
     /**

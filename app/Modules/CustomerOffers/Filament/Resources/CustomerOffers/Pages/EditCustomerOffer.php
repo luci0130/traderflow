@@ -5,6 +5,7 @@ namespace App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\Pages;
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Services\CustomerOfferAcceptor;
+use App\Modules\CustomerOffers\Services\CustomerOfferDuplicator;
 use App\Modules\CustomerOffers\Services\CustomerOfferEmailSender;
 use App\Modules\CustomerOffers\Services\CustomerOfferExcelExporter;
 use App\Modules\CustomerOffers\Services\CustomerOfferPdfExporter;
@@ -17,6 +18,10 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Livewire\Attributes\On;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -24,9 +29,43 @@ class EditCustomerOffer extends EditRecord
 {
     protected static string $resource = CustomerOfferResource::class;
 
+    #[On('offer-items-changed')]
+    public function refreshOfferTotals(): void
+    {
+        $this->refreshFormData(['subtotal', 'tax_total', 'total']);
+    }
+
+    protected function getSaveFormAction(): Action
+    {
+        return parent::getSaveFormAction()
+            ->hidden(fn (): bool => $this->getRecord()->fresh()->isLocked());
+    }
+
+    protected function handleRecordUpdate(Model $record, array $data): Model
+    {
+        return DB::transaction(function () use ($record, $data): Model {
+            $offer = CustomerOffer::query()->lockForUpdate()->findOrFail($record->getKey());
+            Gate::authorize('update', $offer);
+            abort_if($offer->isLocked(), 403);
+
+            return parent::handleRecordUpdate($offer, $data);
+        });
+    }
+
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('duplicateOffer')
+                ->label(__('Duplicate offer'))
+                ->icon(Heroicon::OutlinedDocumentDuplicate)
+                ->color('gray')
+                ->visible(fn (CustomerOffer $record): bool => CustomerOfferResource::canCreate() && CustomerOfferResource::canView($record))
+                ->requiresConfirmation()
+                ->modalDescription(__('Create a draft copy with a new number, the same products and suppliers, and no linked orders.'))
+                ->action(function (CustomerOffer $record): void {
+                    $duplicate = app(CustomerOfferDuplicator::class)->duplicate($record);
+                    $this->redirect(CustomerOfferResource::getUrl('edit', ['record' => $duplicate]));
+                }),
             Action::make('acceptOffer')
                 ->label(__('Accept offer'))
                 ->icon(Heroicon::OutlinedCheckCircle)
@@ -34,7 +73,7 @@ class EditCustomerOffer extends EditRecord
                 ->requiresConfirmation()
                 ->modalHeading(__('Accept offer'))
                 ->modalDescription(__('Accepting marks the offer as accepted, creates the customer order (sale price × secured quantity) and one supplier order per chosen supplier with the quantity it secured.'))
-                ->visible(fn (CustomerOffer $record): bool => ! $record->salesOrder()->exists())
+                ->visible(fn (CustomerOffer $record): bool => ! $record->isLocked())
                 ->action(function (CustomerOffer $record): void {
                     try {
                         $salesOrder = app(CustomerOfferAcceptor::class)->accept($record);
@@ -91,6 +130,7 @@ class EditCustomerOffer extends EditRecord
                     ]);
                 }),
             Action::make('sendOfferEmail')
+                ->visible(fn (CustomerOffer $record): bool => ! $record->isLocked())
                 ->label(__('Send Offer Email'))
                 ->icon(Heroicon::OutlinedPaperAirplane)
                 ->color('primary')
@@ -125,6 +165,7 @@ class EditCustomerOffer extends EditRecord
                         ->required(),
                 ])
                 ->action(function (CustomerOffer $record, array $data): void {
+                    abort_if($record->fresh()->isLocked(), 403);
                     $email = app(CustomerOfferEmailSender::class)->send($record, $data);
 
                     if ($email->status === 'sent') {
@@ -143,7 +184,9 @@ class EditCustomerOffer extends EditRecord
                         ->danger()
                         ->send();
                 }),
-            DeleteAction::make(),
+            DeleteAction::make()
+                ->visible(fn (CustomerOffer $record): bool => ! $record->isLocked())
+                ->before(fn (CustomerOffer $record) => abort_if($record->fresh()->isLocked(), 403)),
         ];
     }
 

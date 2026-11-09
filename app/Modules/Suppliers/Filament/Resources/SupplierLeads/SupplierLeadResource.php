@@ -2,11 +2,14 @@
 
 namespace App\Modules\Suppliers\Filament\Resources\SupplierLeads;
 
+use App\Modules\Supermarkets\Filament\RelationManagers\SupermarketPricesRelationManager;
+use App\Modules\Supermarkets\Filament\RelationManagers\SupermarketProductsRelationManager;
+use App\Modules\Suppliers\Actions\ConvertSupplierLead;
 use App\Modules\Suppliers\Filament\Resources\SupplierLeads\Pages\CreateSupplierLead;
 use App\Modules\Suppliers\Filament\Resources\SupplierLeads\Pages\EditSupplierLead;
 use App\Modules\Suppliers\Filament\Resources\SupplierLeads\Pages\ListSupplierLeads;
-use App\Modules\Suppliers\Models\Supplier;
 use App\Modules\Suppliers\Models\SupplierLead;
+use App\Support\CountryFilter;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -17,6 +20,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -69,37 +73,40 @@ class SupplierLeadResource extends Resource
                     ->description(__('Contact details for a potential supplier. Once someone contacts them, convert the lead into a real supplier.'))
                     ->columns(2)
                     ->schema([
-                        TextInput::make('name')
-                            ->label(__('Name'))
-                            ->required()
-                            ->maxLength(255),
-                        TextInput::make('country')
-                            ->label(__('Country'))
-                            ->maxLength(255),
-                        TextInput::make('website')
-                            ->label(__('Website'))
-                            ->url()
-                            ->maxLength(255),
-                        TextInput::make('email')
-                            ->label(__('Email'))
-                            ->email()
-                            ->maxLength(255),
-                        TextInput::make('phone')
-                            ->label(__('Phone'))
-                            ->tel()
-                            ->maxLength(255),
-                        Select::make('supermarket_product_id')
-                            ->label(__('Product'))
-                            ->helperText(__('The supermarket product this potential supplier could provide.'))
-                            ->relationship('supermarketProduct', 'name')
+                        ...static::contactFields(),
+                        Select::make('supermarketProducts')
+                            ->label(__('Supermarket products'))
+                            ->relationship('supermarketProducts', 'name')
+                            ->saveRelationshipsUsing(fn (SupplierLead $record, array $state): array => $record->supermarketProducts()->sync(array_unique([
+                                ...$state,
+                                ...$record->supermarketPrices()->pluck('supermarket_product_id')->all(),
+                            ])))
+                            ->helperText(__('Products with recorded prices remain associated.'))
+                            ->multiple()
                             ->searchable()
                             ->preload()
                             ->columnSpanFull(),
-                        Textarea::make('notes')
-                            ->label(__('Notes about supplier'))
-                            ->columnSpanFull(),
                     ]),
             ]);
+    }
+
+    /** @return array<Component> */
+    public static function contactFields(): array
+    {
+        return [
+            TextInput::make('name')->label(__('Company name'))->required()->maxLength(255),
+            TextInput::make('country')->label(__('Country'))->maxLength(255),
+            Textarea::make('address')->label(__('Address'))->columnSpanFull(),
+            TextInput::make('phone')->label(__('Phone'))->tel()->maxLength(255),
+            TextInput::make('email')->label(__('Email'))->email()->maxLength(255),
+            TextInput::make('website')->label(__('Website'))->url()->maxLength(255),
+            Textarea::make('notes')->label(__('Notes about supplier'))->columnSpanFull(),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [SupermarketProductsRelationManager::class, SupermarketPricesRelationManager::class];
     }
 
     public static function table(Table $table): Table
@@ -129,7 +136,7 @@ class SupplierLeadResource extends Resource
                     ->label(__('Phone'))
                     ->searchable()
                     ->copyable(),
-                TextColumn::make('supermarketProduct.name')
+                TextColumn::make('supermarketProducts.name')
                     ->label(__('Product'))
                     ->searchable()
                     ->toggleable()
@@ -148,6 +155,7 @@ class SupplierLeadResource extends Resource
                     ->toggleable(),
             ])
             ->filters([
+                CountryFilter::make(),
                 TernaryFilter::make('converted')
                     ->label(__('Converted'))
                     ->placeholder(__('All leads'))
@@ -164,24 +172,11 @@ class SupplierLeadResource extends Resource
                     ->label(__('Convert to supplier'))
                     ->icon(Heroicon::OutlinedArrowsRightLeft)
                     ->color('success')
-                    ->visible(fn (SupplierLead $record): bool => ! $record->isConverted() && (auth()->user()?->can('Create:Supplier') ?? false))
+                    ->visible(fn (SupplierLead $record): bool => ! $record->isConverted() && (auth()->user()?->can('update', $record) ?? false) && (auth()->user()?->can('Create:Supplier') ?? false))
                     ->requiresConfirmation()
                     ->modalDescription(__('This creates a supplier from the lead\'s contact details and marks the lead as converted.'))
                     ->action(function (SupplierLead $record): void {
-                        $supplier = Supplier::create([
-                            'tenant_id' => null,
-                            'name' => $record->name,
-                            'email' => $record->email,
-                            'phone' => $record->phone,
-                            'country' => $record->country,
-                            'notes' => $record->notes,
-                            'status' => 'active',
-                        ]);
-
-                        $record->update([
-                            'converted_supplier_id' => $supplier->getKey(),
-                            'converted_at' => now(),
-                        ]);
+                        app(ConvertSupplierLead::class)->handle($record);
 
                         Notification::make()
                             ->title(__('Lead converted to supplier'))

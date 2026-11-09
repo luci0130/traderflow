@@ -101,5 +101,13 @@
     "Currently valid": "Actuellement valide",
     "All": "Tous",
     "Valid": "Valide",
-    "No parent": "Aucun parent"
+    "No parent": "Aucun parent",
+    "Language": "Langue",
+    "Display currency": "Devise d’affichage",
+    "Exchange rate unavailable": "Taux de change indisponible",
+    "Exchange rate": "Taux de change",
+    "Exchange rates": "Taux de change",
+    "Base currency": "Devise de base",
+    "Quote currency": "Devise de cotation",
+    "Rate date": "Date du taux"
 }

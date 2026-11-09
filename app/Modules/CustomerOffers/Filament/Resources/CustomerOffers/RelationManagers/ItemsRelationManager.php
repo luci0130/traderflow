@@ -3,11 +3,19 @@
 namespace App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\RelationManagers;
 
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
+use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItemSupplier;
 use App\Modules\CustomerOffers\Services\CustomerOfferCalculator;
 use App\Modules\CustomerOffers\Services\RecalculateOfferItemSourcing;
+use Filament\Actions\Action;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Support\Enums\Width;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Livewire\Attributes\On;
 
 /**
  * The offer's "Items" tab, rendered as the sourcing board: each product line
@@ -29,16 +37,113 @@ class ItemsRelationManager extends RelationManager
     // their save requests on change.
     protected static bool $isLazy = false;
 
+    public function canManageItems(): bool
+    {
+        $offer = CustomerOfferResource::getEloquentQuery()->find($this->getOwnerRecord()->getKey());
+
+        return $offer !== null && ! $offer->isLocked() && CustomerOfferResource::canEdit($offer);
+    }
+
+    public function addProductsAction(): Action
+    {
+        return Action::make('addProducts')
+            ->label(__('Add product'))
+            ->icon(Heroicon::OutlinedPlus)
+            ->visible(fn (): bool => $this->canManageItems())
+            ->modalHeading(__('Add products and suppliers'))
+            ->modalWidth(Width::Screen)
+            ->closeModalByClickingAway(false)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel(__('Close'))
+            ->modalContent(fn (): View => view('filament.customer-offers.add-products-modal', [
+                'offerId' => $this->getOwnerRecord()->getKey(),
+                'pickerKey' => (string) Str::uuid(),
+            ]));
+    }
+
+    #[On('offer-products-added')]
+    public function productsAdded(int $offerId): void
+    {
+        if ($offerId !== $this->getOwnerRecord()->getKey()) {
+            return;
+        }
+
+        $this->unmountAction();
+        $this->dispatch('offer-items-changed');
+    }
+
+    public function deleteItemAction(): Action
+    {
+        return Action::make('deleteItem')
+            ->label(__('Remove product'))
+            ->iconButton()
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->visible(fn (): bool => $this->canManageItems())
+            ->requiresConfirmation()
+            ->modalDescription(__('Remove this product and all its suppliers from this offer? Catalog records will be preserved.'))
+            ->action(function (array $arguments): void {
+                DB::transaction(function () use ($arguments): void {
+                    CustomerOffer::query()->lockForUpdate()->findOrFail($this->getOwnerRecord()->getKey());
+                    abort_unless($this->canManageItems(), 403);
+                    $this->getOwnerRecord()->items()->findOrFail($arguments['item'])->delete();
+                });
+                $this->dispatch('offer-items-changed');
+            });
+    }
+
+    public function deleteSupplierAction(): Action
+    {
+        return Action::make('deleteSupplier')
+            ->label(__('Remove supplier'))
+            ->iconButton()
+            ->icon(Heroicon::OutlinedTrash)
+            ->color('danger')
+            ->visible(fn (): bool => $this->canManageItems())
+            ->requiresConfirmation()
+            ->modalDescription(__('Remove this supplier from this product? Removing the last supplier also removes the product from this offer.'))
+            ->action(function (array $arguments): void {
+                DB::transaction(function () use ($arguments): void {
+                    CustomerOffer::query()->lockForUpdate()->findOrFail($this->getOwnerRecord()->getKey());
+                    abort_unless($this->canManageItems(), 403);
+                    $row = $this->resolveSupplierRow((int) $arguments['supplier']);
+                    abort_if($row === null, 404);
+                    $item = $row->item;
+                    $row->delete();
+                    $remaining = $item->suppliers()->get();
+
+                    if ($remaining->isEmpty()) {
+                        $item->delete();
+
+                        return;
+                    }
+
+                    foreach ($remaining->values() as $index => $supplier) {
+                        $supplier->update(['priority' => $index + 1]);
+                    }
+
+                    $first = $remaining->first();
+                    $item->update([
+                        'supplier_id' => $first->supplier_id,
+                        'supplier_product_id' => $first->supplier_product_id,
+                    ]);
+                    app(RecalculateOfferItemSourcing::class)->sync($item->load('suppliers'));
+                    app(CustomerOfferCalculator::class)->recalculateOffer($this->getOwnerRecord());
+                });
+                $this->dispatch('offer-items-changed');
+            });
+    }
+
     public function editsSell(): bool
     {
-        return CustomerOfferResource::showsSellSide();
+        return $this->canManageItems() && CustomerOfferResource::showsSellSide();
     }
 
     public function editsSourcing(): bool
     {
         $user = auth()->user();
 
-        return ($user?->isPurchasingAgent() ?? false) || ($user?->isSuperAdmin() ?? false);
+        return $this->canManageItems() && (($user?->isPurchasingAgent() ?? false) || ($user?->isSuperAdmin() ?? false));
     }
 
     /**

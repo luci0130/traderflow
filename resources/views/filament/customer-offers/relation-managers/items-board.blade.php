@@ -6,6 +6,8 @@
     $groups = $this->supplierGroups();
     $editsSell = $this->editsSell();
     $editsSourcing = $this->editsSourcing();
+    $canManageItems = $this->canManageItems();
+    $showsSellSide = \App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource::showsSellSide();
 
     $fmt = fn ($value) => $value !== null && $value !== '' ? number_format((float) $value, 2) : '—';
 
@@ -17,12 +19,21 @@
 <div>
     <x-filament::section>
     <x-slot name="heading">{{ __('Products & sourcing') }}</x-slot>
+    <x-slot name="afterHeader">
+        @if ($canManageItems)
+            {{ $this->addProductsAction }}
+        @endif
+    </x-slot>
     <x-slot name="description">
+        @if ($this->getOwnerRecord()->isLocked())
+            {{ __('Accepted offers cannot be edited. Duplicate this offer to make changes.') }}
+        @else
         {{ __('Contact the suppliers in priority order and fill in the landed cost and the quantity you secured.') }}
         <span class="ml-1 inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
             <span class="inline-block h-3 w-4 rounded ring-1 ring-inset ring-warning-300 bg-warning-50 dark:bg-warning-500/10"></span>
             {{ __('highlighted fields are editable') }}
         </span>
+        @endif
     </x-slot>
 
     @if ($items->isEmpty())
@@ -78,7 +89,7 @@
                         // $originFlag = Countries::flagUrl($originCountry);
                         // $originLabel = Countries::label($originCountry);
                     @endphp
-                    <div x-data="{ open: true }" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
+                    <div wire:key="offer-product-{{ $item->id }}" x-data="{ open: true }" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
                         {{-- Product header / summary --}}
                         <div class="flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4"
                             x-data="{
@@ -135,25 +146,33 @@
                                 <div @class(['mt-1', 'text-gray-600 dark:text-gray-300' => $avgLanded !== null, 'text-gray-300 dark:text-white/30' => $avgLanded === null])>{{ $fmt($avgLanded) }}</div>
                             </div>
 
-                            @if ($editsSell)
+                            @if ($showsSellSide)
                                 {{-- Alpine owns this two-way pair (wire:ignore) so Livewire morphs
                                      never clobber the values; each field recomputes the other and
                                      persists via $wire. --}}
                                 <div class="flex-1 text-center">
                                     <div class="text-[11px] uppercase tracking-wide text-gray-400">{{ __('Sale price') }}</div>
+                                    @if ($editsSell)
                                     <span wire:ignore class="mx-auto mt-1 block max-w-[7rem]">
                                         <input type="number" step="any" min="0" x-model.number="sale"
                                             x-on:change="margin = purchase > 0 ? +(((sale - purchase) / purchase) * 100).toFixed(2) : 0; $wire.saveSale({{ $item->id }}, 'sale_price', sale)"
                                             class="{{ $editable }} text-center" />
                                     </span>
+                                    @else
+                                        <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{{ $fmt($item->sale_price) }}</div>
+                                    @endif
                                 </div>
                                 <div class="hidden flex-1 text-center sm:block">
                                     <div class="text-[11px] uppercase tracking-wide text-gray-400">{{ __('Margin %') }}</div>
+                                    @if ($editsSell)
                                     <span wire:ignore class="mx-auto mt-1 block max-w-[7rem]">
                                         <input type="number" step="any" x-model.number="margin" :class="marginClass"
                                             x-on:change="sale = +(purchase * (1 + (margin / 100))).toFixed(2); $wire.saveSale({{ $item->id }}, 'margin_percent', margin)"
                                             class="{{ $editable }} text-center !font-semibold" />
                                     </span>
+                                    @else
+                                        <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{{ $fmt($item->margin_percent) }}</div>
+                                    @endif
                                 </div>
                             @endif
 
@@ -168,6 +187,9 @@
                                     <div class="h-full rounded-full transition-all {{ $securedColor }}" style="width: {{ $securedPct }}%"></div>
                                 </div>
                             </div>
+                            @if ($canManageItems)
+                                {{ ($this->deleteItemAction)(['item' => $item->id]) }}
+                            @endif
                         </div>
 
                         {{-- Supplier area: the purchase options for this product --}}
@@ -188,7 +210,7 @@
             {{-- Suppliers view: supplier parent + the products it is contacted for. --}}
             <div x-show="tab === 'suppliers'" x-cloak class="space-y-3">
                 @foreach ($groups as $group)
-                    <div x-data="{ open: true }" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
+                    <div wire:key="offer-supplier-group-{{ $group['supplier']?->getKey() }}" x-data="{ open: true }" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5">
                         <button type="button" x-on:click="open = ! open" class="flex w-full items-center gap-2 px-4 py-3 text-left">
                             <x-filament::icon x-show="! open" icon="heroicon-m-chevron-right" class="h-4 w-4 text-gray-400" />
                             <x-filament::icon x-show="open" x-cloak icon="heroicon-m-chevron-down" class="h-4 w-4 text-gray-400" />
@@ -210,4 +232,5 @@
         </div>
     @endif
     </x-filament::section>
+    <x-filament-actions::modals />
 </div>

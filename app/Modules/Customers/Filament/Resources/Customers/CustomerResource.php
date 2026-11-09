@@ -11,6 +11,7 @@ use App\Modules\Customers\Filament\Resources\Customers\Pages\EditCustomer;
 use App\Modules\Customers\Filament\Resources\Customers\Pages\ListCustomers;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\Documents\Filament\RelationManagers\DocumentsRelationManager;
+use App\Support\CountryFilter;
 use App\Support\StatusColors;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
@@ -144,6 +145,7 @@ class CustomerResource extends Resource
                 TextColumn::make('prices_count')->label('Prices')->counts('prices')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                CountryFilter::make('country'),
                 SelectFilter::make('status')
                     ->options([
                         'active' => 'Active',

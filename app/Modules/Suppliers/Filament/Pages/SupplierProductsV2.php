@@ -9,6 +9,7 @@ use App\Modules\Suppliers\Models\Supplier;
 use App\Support\CreationDateTable;
 use BackedEnum;
 use Filament\Actions\CreateAction;
+use Filament\Actions\EditAction;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
@@ -58,7 +59,7 @@ class SupplierProductsV2 extends Page implements HasTable
 
     public static function getNavigationLabel(): string
     {
-        return __('Supplier products v2');
+        return __('Supplier Products');
     }
 
     public static function getNavigationGroup(): ?string
@@ -68,7 +69,7 @@ class SupplierProductsV2 extends Page implements HasTable
 
     public function getTitle(): string
     {
-        return __('Supplier products v2');
+        return __('Supplier Products');
     }
 
     public function content(Schema $schema): Schema
@@ -81,6 +82,14 @@ class SupplierProductsV2 extends Page implements HasTable
         SupplierProductResource::table($table->query(fn (): Builder => $this->getLoadedProductsQuery()));
 
         return $table
+            ->recordUrl(fn (SupplierProduct $record): ?string => SupplierProductResource::canEdit($record)
+                ? SupplierProductResource::getUrl('edit', ['record' => $record])
+                : null)
+            ->recordActions([
+                EditAction::make()
+                    ->authorize(fn (SupplierProduct $record): bool => SupplierProductResource::canEdit($record))
+                    ->url(fn (SupplierProduct $record): string => SupplierProductResource::getUrl('edit', ['record' => $record])),
+            ])
             ->paginated(false)
             ->content(fn (): View => view('filament.supplier-products.v2-grouped-table'))
             ->emptyState(fn (): View => view('filament.supplier-products.v2-grouped-table', ['records' => collect()]));

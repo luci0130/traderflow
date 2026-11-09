@@ -130,6 +130,7 @@ class ReviewPricePhotos extends Page implements HasForms
             $this->supplierLeadDraft = [
                 'name' => $get('name'),
                 'country' => $get('country'),
+                'address' => $get('address'),
                 'website' => $get('website'),
                 'email' => $get('email'),
                 'phone' => $get('phone'),
@@ -167,6 +168,7 @@ class ReviewPricePhotos extends Page implements HasForms
                     ->maxLength(255)
                     ->live(onBlur: true)
                     ->afterStateUpdated($rememberDraft),
+                Textarea::make('address')->label(__('Address'))->live(onBlur: true)->afterStateUpdated($rememberDraft),
                 TextInput::make('country')
                     ->label(__('Country'))
                     ->maxLength(255)
@@ -199,6 +201,7 @@ class ReviewPricePhotos extends Page implements HasForms
                 SupplierLead::create([
                     'name' => $data['name'],
                     'country' => $data['country'] ?? null,
+                    'address' => $data['address'] ?? null,
                     'website' => $data['website'] ?? null,
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,

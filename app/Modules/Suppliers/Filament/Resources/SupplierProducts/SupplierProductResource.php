@@ -56,6 +56,8 @@ class SupplierProductResource extends Resource
 
     protected static bool $isScopedToTenant = false;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSquares2x2;
 
     protected static string|UnitEnum|null $navigationGroup = 'Catalog';
@@ -71,12 +73,12 @@ class SupplierProductResource extends Resource
 
     public static function getPluralModelLabel(): string
     {
-        return __('Supplier products');
+        return __('Supplier products old');
     }
 
     public static function getNavigationLabel(): string
     {
-        return __('Supplier products');
+        return __('Supplier products old');
     }
 
     public static function getNavigationGroup(): ?string

@@ -61,6 +61,7 @@ class CreateSupermarketProduct extends CreateRecord
                     ->label(__('Name'))
                     ->required()
                     ->maxLength(255),
+                Textarea::make('address')->label(__('Address')),
                 TextInput::make('country')
                     ->label(__('Country'))
                     ->maxLength(255),
@@ -83,6 +84,7 @@ class CreateSupermarketProduct extends CreateRecord
                 $this->pendingSupplierLeads[] = [
                     'name' => $data['name'],
                     'country' => $data['country'] ?? null,
+                    'address' => $data['address'] ?? null,
                     'website' => $data['website'] ?? null,
                     'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,

@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -58,6 +59,24 @@ class AdminSupplierProductResourceTest extends TestCase
     {
         $this->assertTrue(Route::has('filament.admin.resources.supplier-products.index'));
         $this->assertSame('Catalog', SupplierProductResource::getNavigationGroup());
+        $this->assertFalse(SupplierProductResource::shouldRegisterNavigation());
+        $this->assertSame('Supplier products old', SupplierProductResource::getNavigationLabel());
+        $this->assertSame('Supplier products old', SupplierProductResource::getPluralModelLabel());
+
+        Livewire::test(ListSupplierProducts::class)
+            ->assertSuccessful()
+            ->assertSee('Supplier products old');
+    }
+
+    public function test_supplier_products_v2_is_named_supplier_products_in_navigation_and_page_title(): void
+    {
+        $this->assertTrue(SupplierProductsV2::shouldRegisterNavigation());
+        $this->assertSame('Supplier Products', SupplierProductsV2::getNavigationLabel());
+
+        Livewire::test(SupplierProductsV2::class)
+            ->assertSuccessful()
+            ->assertSee('Supplier Products')
+            ->assertDontSee('Supplier products v2');
     }
 
     public function test_supplier_products_v2_loads_latest_week_and_other_weeks_on_demand(): void
@@ -118,6 +137,62 @@ class AdminSupplierProductResourceTest extends TestCase
             ->call('loadWeek', $supplier->id, '2026-09-28');
 
         $this->assertSame(['2026-10-05', '2026-09-28'], $page->instance()->loadedWeeks[$supplier->id]);
+    }
+
+    public function test_supplier_products_v2_links_to_the_existing_edit_page(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $product = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => 'Roșii',
+            'status' => 'active',
+            'currency' => 'EUR',
+            'unit_price' => 4,
+            'min_quantity_unit' => 'kg',
+        ]);
+        $editUrl = SupplierProductResource::getUrl('edit', ['record' => $product]);
+
+        $page = Livewire::test(SupplierProductsV2::class)
+            ->call('loadSupplier', $supplier->id)
+            ->assertTableActionVisible('edit', $product)
+            ->assertTableActionHasUrl('edit', $editUrl, $product)
+            ->assertSeeHtml('href="'.$editUrl.'"');
+
+        $this->assertSame($editUrl, $page->instance()->getTable()->getRecordUrl($product));
+
+        Livewire::test(EditSupplierProduct::class, ['record' => $product->getRouteKey()])
+            ->assertSuccessful()
+            ->assertFormSet([
+                'producer_id' => $supplier->id,
+                'name' => 'Roșii',
+                'unit_price' => '4.0000',
+            ]);
+    }
+
+    public function test_supplier_products_v2_hides_edit_links_without_update_permission(): void
+    {
+        $supplier = Supplier::create(['tenant_id' => $this->tenant->id, 'name' => 'Ferma Verde']);
+        $product = SupplierProduct::create([
+            'producer_id' => $supplier->id,
+            'name' => 'Roșii',
+            'status' => 'active',
+            'currency' => 'EUR',
+        ]);
+        $user = User::factory()->create();
+        $this->tenant->users()->attach($user, ['role' => 'viewer']);
+        $user->givePermissionTo(Permission::firstOrCreate(['name' => 'ViewAny:SupplierProduct', 'guard_name' => 'web']));
+        $this->actingAs($user);
+
+        $page = Livewire::test(SupplierProductsV2::class)
+            ->assertSuccessful()
+            ->call('loadSupplier', $supplier->id)
+            ->assertTableActionHidden('edit', $product)
+            ->assertDontSeeHtml('href="'.SupplierProductResource::getUrl('edit', ['record' => $product]).'"');
+
+        $this->assertNull($page->instance()->getTable()->getRecordUrl($product));
+
+        Livewire::test(EditSupplierProduct::class, ['record' => $product->getRouteKey()])
+            ->assertForbidden();
     }
 
     public function test_supplier_products_v2_loads_complete_groups_without_pagination(): void

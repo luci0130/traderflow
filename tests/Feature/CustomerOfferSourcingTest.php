@@ -16,6 +16,7 @@ use App\Modules\Suppliers\Models\Supplier;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -72,6 +73,12 @@ class CustomerOfferSourcingTest extends TestCase
         $this->actingAs($user);
         session(['tenant_id' => $this->tenant->id]);
         Filament::setTenant($this->tenant);
+        setPermissionsTeamId($this->tenant->getKey());
+        $user->givePermissionTo(
+            Permission::firstOrCreate(['name' => 'ViewAny:CustomerOffer', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'View:CustomerOffer', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'Update:CustomerOffer', 'guard_name' => 'web']),
+        );
 
         return $user;
     }
@@ -218,5 +225,65 @@ class CustomerOfferSourcingTest extends TestCase
         $this->offerWithTwoSuppliers();
 
         $this->assertTrue(CustomerOfferResource::showsSellSide());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function sellSideRoles(): array
+    {
+        return [
+            'sales agent' => ['sales_agent'],
+            'super admin' => ['super_admin'],
+        ];
+    }
+
+    #[DataProvider('sellSideRoles')]
+    public function test_sell_side_role_can_edit_margin_when_also_a_purchasing_agent(string $role): void
+    {
+        $user = $this->actingAsRole($role);
+        Role::firstOrCreate(['name' => 'purchasing_agent', 'guard_name' => 'web', 'tenant_id' => null]);
+        $user->assignRole('purchasing_agent');
+
+        setPermissionsTeamId($this->tenant->getKey());
+        $user->givePermissionTo(
+            Permission::firstOrCreate(['name' => 'ViewAny:CustomerOffer', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'View:CustomerOffer', 'guard_name' => 'web']),
+            Permission::firstOrCreate(['name' => 'Update:CustomerOffer', 'guard_name' => 'web']),
+        );
+
+        [$offer, $item] = $this->offerWithTwoSuppliers();
+        $offer->update(['created_by' => $user->getKey()]);
+        $item->update(['purchase_price' => 5]);
+
+        Livewire::test(EditCustomerOffer::class, ['record' => $offer->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Subtotal');
+
+        Livewire::test(ItemsRelationManager::class, ['ownerRecord' => $offer, 'pageClass' => EditCustomerOffer::class])
+            ->assertSee(__('Margin %'))
+            ->call('saveSale', $item->id, 'margin_percent', 25)
+            ->assertHasNoErrors();
+
+        $item->refresh();
+        $this->assertSame('6.2500', $item->sale_price);
+        $this->assertSame('25.0000', $item->margin_percent);
+        $this->assertSame('562.5000', $offer->fresh()->total);
+    }
+
+    public function test_purchasing_agent_cannot_change_sale_price_or_margin(): void
+    {
+        $this->actingAsRole('purchasing_agent');
+        [$offer, $item] = $this->offerWithTwoSuppliers();
+        $item->update(['purchase_price' => 5]);
+
+        Livewire::test(ItemsRelationManager::class, ['ownerRecord' => $offer, 'pageClass' => EditCustomerOffer::class])
+            ->assertDontSee(__('Margin %'))
+            ->call('saveSale', $item->id, 'margin_percent', 25)
+            ->call('saveSale', $item->id, 'sale_price', 8);
+
+        $item->refresh();
+        $this->assertSame('10.0000', $item->sale_price);
+        $this->assertSame('100.0000', $item->margin_percent);
     }
 }

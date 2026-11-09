@@ -30,7 +30,7 @@
                             <tr>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">{{ $supermarket['name'] ?? '-' }}</td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
-                                    {{ number_format((float) ($supermarket['price_excl_vat'] ?? $supermarket['gross_price']), 2) }} {{ $supermarket['currency'] }}
+                                    <x-price :amount="$supermarket['price_excl_vat'] ?? $supermarket['gross_price']" :currency="$supermarket['currency']" />
                                     @if ($supermarket['is_promo']) <span class="text-warning-600">★</span> @endif
                                 </td>
                                 <td class="py-1 pr-3 text-gray-500 dark:text-gray-400">{{ $supermarket['observed_at'] ?? '-' }}</td>
@@ -84,7 +84,7 @@
                                 @endphp
                                 <td class="py-1 pr-3 text-gray-500 dark:text-gray-400">{{ $supplierLocation !== '' ? $supplierLocation : '-' }}</td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
-                                    {{ $supplier['unit_price'] !== null ? number_format((float) $supplier['unit_price'], 2).' '.$supplier['currency'] : '-' }}
+                                    <x-price :amount="$supplier['unit_price']" :currency="$supplier['currency']" />
                                 </td>
                                 <td class="py-1 pr-3 text-gray-900 dark:text-white">
                                     {{ $supplier['quantity'] !== null ? number_format((float) $supplier['quantity'], 2) : '-' }}

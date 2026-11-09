@@ -21,11 +21,14 @@
             <th class="py-2 pr-3 font-medium">{{ __('Product price') }}</th>
             <th class="py-2 pr-3 font-medium">{{ __('Total cost') }}</th>
             <th class="py-2 pr-3 font-medium">{{ __('Secured qty') }}</th>
+            @if ($canManageItems)
+                <th class="py-2 font-medium"><span class="sr-only">{{ __('Actions') }}</span></th>
+            @endif
         </tr>
     </thead>
     <tbody class="divide-y divide-gray-200/70 dark:divide-white/5">
         @foreach ($rows as $row)
-            <tr @class(['transition', 'opacity-50' => $editsSell && ! $row->include_in_order])>
+            <tr wire:key="offer-{{ $nameColumn }}-supplier-row-{{ $row->id }}" @class(['transition', 'opacity-50' => $editsSell && ! $row->include_in_order])>
                 @if ($editsSell)
                     <td class="py-2 pr-3 text-center">
                         <input type="checkbox" @checked($row->include_in_order)
@@ -87,6 +90,11 @@
                         <span class="text-gray-900 dark:text-white">{{ $fmt($row->secured_quantity) }}</span>
                     @endif
                 </td>
+                @if ($canManageItems)
+                    <td class="py-2 text-right">
+                        {{ ($this->deleteSupplierAction)(['supplier' => $row->id]) }}
+                    </td>
+                @endif
             </tr>
         @endforeach
     </tbody>

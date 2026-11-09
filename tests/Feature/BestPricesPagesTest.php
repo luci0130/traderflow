@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CurrencyExchangeRate;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Modules\BestPrices\Filament\Pages\BestPricesSupermarket;
@@ -28,6 +29,14 @@ use function setPermissionsTeamId;
 class BestPricesPagesTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        CurrencyExchangeRate::factory()->create();
+        CurrencyExchangeRate::factory()->inverse()->create();
+    }
 
     /**
      * Grant the supermarket-price permission the sales pages gate on, without
@@ -515,6 +524,42 @@ class BestPricesPagesTest extends TestCase
         $item = CustomerOffer::query()->latest('id')->first()?->items->first();
         $this->assertNotNull($item);
         $this->assertSame('30.0000', $item->quantity);
+    }
+
+    public function test_best_prices_order_products_using_a_common_currency(): void
+    {
+        $ronSupplier = $this->canonicalWithSupplier('RON supplier product', 6);
+        $eurSupplier = $this->canonicalWithSupplier('EUR supplier product', 2);
+        $eurSupplier->supplierProducts()->first()->update(['currency' => 'EUR']);
+
+        $this->assertSame([$ronSupplier->id, $eurSupplier->id], app(BestPricesSuppliers::class)->getQuery()->whereKey([$ronSupplier->id, $eurSupplier->id])->pluck('id')->all());
+
+        $ronMarket = $this->canonicalWithSupermarketPrice('RON market product', 9);
+        $eurMarket = $this->canonicalWithSupermarketPrice('EUR market product', 3);
+        SupermarketPrice::query()->where('supermarket_product_id', $eurMarket->supermarketProducts()->first()->id)->update(['currency' => 'EUR']);
+
+        $this->assertSame([$eurMarket->id, $ronMarket->id], app(BestPricesSupermarket::class)->getQuery()->whereKey([$ronMarket->id, $eurMarket->id])->pluck('id')->all());
+    }
+
+    public function test_weekly_best_prices_compare_currencies_before_assigning_badges(): void
+    {
+        $supplierPage = app(BestPricesSuppliers::class);
+        $supplierPage->expandedCanonicalIds[1] = [
+            ['id' => 1, 'created_at' => now()->toDateTimeString(), 'unit_price' => 2, 'currency' => 'EUR'],
+            ['id' => 2, 'created_at' => now()->toDateTimeString(), 'unit_price' => 6, 'currency' => 'RON'],
+        ];
+        $week = $supplierPage->supplierWeeks(1)->first();
+        $this->assertSame(6.0, $week['best_price']);
+        $this->assertSame('RON', $week['best_currency']);
+
+        $supermarketPage = app(BestPricesSupermarket::class);
+        $supermarketPage->expandedCanonicalIds[1] = [
+            ['id' => 1, 'created_at' => now()->toDateTimeString(), 'gross_price' => 3, 'currency' => 'EUR'],
+            ['id' => 2, 'created_at' => now()->toDateTimeString(), 'gross_price' => 9, 'currency' => 'RON'],
+        ];
+        $week = $supermarketPage->supermarketWeeks(1)->first();
+        $this->assertSame(3.0, $week['best_price']);
+        $this->assertSame('EUR', $week['best_currency']);
     }
 
     private function canonicalWithSupplier(string $name, float $landedCost): CanonicalProduct

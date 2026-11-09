@@ -3,6 +3,7 @@
 namespace App\Modules\Dashboard\Filament\Widgets;
 
 use App\Modules\Suppliers\Models\SupplierLead;
+use App\Support\CountryFilter;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
@@ -31,6 +32,7 @@ class SupplierLeadsToConvertWidget extends TableWidget
                 TextColumn::make('email')->placeholder('—'),
                 TextColumn::make('created_at')->date()->placeholder('—'),
             ])
+            ->filters([CountryFilter::make()])
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25]);
     }
