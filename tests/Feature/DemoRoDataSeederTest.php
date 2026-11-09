@@ -14,6 +14,7 @@ use App\Modules\SupplierOffers\Models\SupplierOfferItem;
 use App\Modules\SupplierOrders\Models\SupplierOrder;
 use App\Modules\Suppliers\Models\Supplier;
 use App\Modules\Units\Models\Unit;
+use Carbon\CarbonInterface;
 use Database\Seeders\DemoRoDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -29,6 +30,14 @@ class DemoRoDataSeederTest extends TestCase
 
         // Keep the seed fast; the production default is 60 customer offers/tenant.
         config(['demo.customer_offers_per_tenant' => 8]);
+        mt_srand(12345);
+    }
+
+    protected function tearDown(): void
+    {
+        mt_srand();
+
+        parent::tearDown();
     }
 
     public function test_seeder_produces_the_expected_counts(): void
@@ -98,7 +107,7 @@ class DemoRoDataSeederTest extends TestCase
         $offers = CustomerOffer::query()->get();
 
         // Spread across more than a month (history window is 90 days).
-        $oldest = $offers->min(fn (CustomerOffer $offer): \Carbon\CarbonInterface => $offer->offer_date);
+        $oldest = $offers->min(fn (CustomerOffer $offer): CarbonInterface => $offer->offer_date);
         $this->assertGreaterThan(30, abs(Carbon::today()->diffInDays($oldest)));
 
         // A mix of statuses is seeded.
