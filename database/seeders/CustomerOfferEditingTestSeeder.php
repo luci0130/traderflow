@@ -39,5 +39,9 @@ class CustomerOfferEditingTestSeeder extends Seeder
             ]);
             $canonical->supplierProducts()->attach($product);
         }
+
+        for ($index = 1; $index <= 12; $index++) {
+            CanonicalProduct::factory()->create(['name' => sprintf('Scroll fixture product %02d', $index)]);
+        }
     }
 }

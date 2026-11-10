@@ -4,7 +4,7 @@ for (const width of [1440, 390]) {
     test(`offer product picker displays the complete comparison table at ${width}px`, async ({
         page,
     }) => {
-        await page.setViewportSize({ width, height: 1000 });
+        await page.setViewportSize({ width, height: 640 });
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto('/login');
@@ -35,6 +35,27 @@ for (const width of [1440, 390]) {
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 1);
         const tableBounds = await comparison.boundingBox();
         expect(tableBounds!.width).toBeGreaterThanOrEqual(1200);
+
+        await expect
+            .poll(() =>
+                modal.evaluate(
+                    (element) => element.scrollHeight - element.clientHeight,
+                ),
+            )
+            .toBeGreaterThan(100);
+        await page.mouse.move(width / 2, 320);
+        await page.mouse.wheel(0, 600);
+        await expect
+            .poll(() => modal.evaluate((element) => element.scrollTop))
+            .toBeGreaterThan(100);
+        await expect(modal.locator('.fi-modal-header')).toBeInViewport();
+        await expect(
+            modal.getByRole('button', { name: /^(Close|Închide)$/ }).last(),
+        ).toBeInViewport();
+        await page.mouse.wheel(0, -1200);
+        await expect
+            .poll(() => modal.evaluate((element) => element.scrollTop))
+            .toBe(0);
 
         const search = comparison.locator('input[type="search"]').first();
         await search.fill('No matching product e2e');
