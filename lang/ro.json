@@ -651,5 +651,19 @@
     "The password must contain at least one letter.": "Parola trebuie să conțină cel puțin o literă.",
     "The password must contain uppercase and lowercase letters.": "Parola trebuie să conțină litere mari și mici.",
     "The password must contain at least one number.": "Parola trebuie să conțină cel puțin o cifră.",
-    "The password must contain at least one symbol.": "Parola trebuie să conțină cel puțin un simbol."
+    "The password must contain at least one symbol.": "Parola trebuie să conțină cel puțin un simbol.",
+    "Choose offer template": "Alege șablonul ofertei",
+    "Offer template": "Șablon ofertă",
+    "Generate PDF": "Generează PDF",
+    "Commercial Offer No. :number dated :date": "Ofertă comercială nr. :number din :date",
+    "Buyer": "Cumpărător",
+    "Tax ID": "CIF",
+    "Registration No.": "Nr. Reg.",
+    "Locality": "Localitate",
+    "Phone / Email": "Telefon / Email",
+    "No.": "Nr.",
+    "UoM": "U.M.",
+    "Value": "Valoare",
+    "As ordered": "Conform comenzii",
+    "Note: Prices exclude VAT. Transport is included.": "Notă: Prețurile nu includ TVA. Transportul este inclus."
 }

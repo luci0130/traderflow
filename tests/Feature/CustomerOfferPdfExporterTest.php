@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Tenant;
+use App\Modules\CustomerOffers\Enums\CustomerOfferPdfTemplate;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItem;
 use App\Modules\CustomerOffers\Services\CustomerOfferPdfExporter;
@@ -13,6 +14,7 @@ use App\Modules\Suppliers\Models\Supplier;
 use App\Modules\TenantSettings\Models\TenantSetting;
 use App\Modules\Units\Models\Unit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CustomerOfferPdfExporterTest extends TestCase
@@ -173,15 +175,118 @@ class CustomerOfferPdfExporterTest extends TestCase
         $this->assertNull($data['signature']);
     }
 
-    public function test_export_produces_a_pdf_file(): void
+    /** @return array<string, array{CustomerOfferPdfTemplate}> */
+    public static function templates(): array
+    {
+        return collect(CustomerOfferPdfTemplate::cases())->mapWithKeys(fn (CustomerOfferPdfTemplate $template): array => [$template->value => [$template]])->all();
+    }
+
+    #[DataProvider('templates')]
+    public function test_export_produces_a_pdf_file(CustomerOfferPdfTemplate $template): void
     {
         [$offer] = $this->makeOffer();
 
-        $path = app(CustomerOfferPdfExporter::class)->export($offer);
+        $path = app(CustomerOfferPdfExporter::class)->export($offer, $template);
 
         $this->assertFileExists($path);
         $this->assertStringStartsWith('%PDF', file_get_contents($path));
 
+        if ($artifactDirectory = getenv('OFFER_PDF_ARTIFACT_DIR')) {
+            if (! is_dir($artifactDirectory)) {
+                mkdir($artifactDirectory, 0775, true);
+            }
+            copy($path, $artifactDirectory.'/'.$template->value.'.pdf');
+        }
+
         @unlink($path);
+    }
+
+    public function test_english_simple_template_uses_english_labels_and_number_format_regardless_of_interface_language(): void
+    {
+        [$offer] = $this->makeOffer();
+        app()->setLocale('ro');
+        $data = app(CustomerOfferPdfExporter::class)->buildViewData($offer, CustomerOfferPdfTemplate::SimpleEn);
+        $html = view(CustomerOfferPdfTemplate::SimpleEn->view(), $data)->render();
+
+        $this->assertSame('ro', app()->getLocale());
+        $this->assertSame('en', $data['documentLocale']);
+        $this->assertStringContainsString('Commercial Offer No. OC-00065 dated 08.07.2026', $html);
+        $this->assertStringContainsString('BUYER', $html);
+        $this->assertStringContainsString('Product name', $html);
+        $this->assertStringContainsString('Unit price', $html);
+        $this->assertStringContainsString('8.25 RON', $html);
+        $this->assertStringContainsString('As ordered', $html);
+        $this->assertStringContainsString('Note: Prices exclude VAT. Transport is included.', $html);
+        $this->assertStringNotContainsString('Conform comenzii', $html);
+    }
+
+    public function test_romanian_simple_template_uses_romanian_labels_and_real_offer_data(): void
+    {
+        [$offer] = $this->makeOffer();
+        app()->setLocale('en');
+        $data = app(CustomerOfferPdfExporter::class)->buildViewData($offer, CustomerOfferPdfTemplate::SimpleRo);
+        $html = view(CustomerOfferPdfTemplate::SimpleRo->view(), $data)->render();
+
+        $this->assertSame('en', app()->getLocale());
+        $this->assertSame('ro', $data['documentLocale']);
+        $this->assertStringContainsString('Ofertă comercială nr. OC-00065 din 08.07.2026', $html);
+        $this->assertStringContainsString('FRESHMARKET DISTRIBUȚIE SRL', $html);
+        $this->assertStringContainsString('CARREFOUR ROMANIA SA', $html);
+        $this->assertStringContainsString('Nume produs', $html);
+        $this->assertStringContainsString('Cartofi dulci', $html);
+        $this->assertStringContainsString('Conform comenzii', $html);
+        $this->assertStringContainsString('8,25 RON', $html);
+        $this->assertStringContainsString('Notă: Prețurile nu includ TVA. Transportul este inclus.', $html);
+        $this->assertStringNotContainsString('PAI AGROCOMPLEX', $html);
+    }
+
+    public function test_existing_complex_template_remains_the_default(): void
+    {
+        [$offer] = $this->makeOffer();
+        $exporter = app(CustomerOfferPdfExporter::class);
+        $this->assertSame($exporter->buildViewData($offer, CustomerOfferPdfTemplate::Complex), $exporter->buildViewData($offer));
+        $this->assertSame('pdf.customer-offer', CustomerOfferPdfTemplate::Complex->view());
+    }
+
+    public function test_simple_template_escapes_dynamic_content_and_keeps_additional_offer_notes(): void
+    {
+        [$offer] = $this->makeOffer();
+        $offer->update(['notes' => 'Payment within 30 days. <script>alert("unsafe")</script>']);
+        $offer->items()->first()->product->update(['name' => '<b>Test & product</b>']);
+        $html = view(CustomerOfferPdfTemplate::SimpleEn->view(), app(CustomerOfferPdfExporter::class)->buildViewData($offer, CustomerOfferPdfTemplate::SimpleEn))->render();
+        $this->assertStringContainsString('Payment within 30 days.', $html);
+        $this->assertStringContainsString('&lt;b&gt;Test &amp; product&lt;/b&gt;', $html);
+        $this->assertStringNotContainsString('<script>', $html);
+    }
+
+    public function test_simple_template_handles_an_offer_without_product_lines(): void
+    {
+        [$offer] = $this->makeOffer();
+        $offer->items()->delete();
+        $path = app(CustomerOfferPdfExporter::class)->export($offer->fresh(), CustomerOfferPdfTemplate::SimpleRo);
+
+        try {
+            $this->assertStringStartsWith('%PDF', file_get_contents($path));
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    public function test_simple_template_paginates_long_product_lists(): void
+    {
+        [$offer] = $this->makeOffer();
+        $first = $offer->items()->first();
+
+        for ($index = 0; $index < 70; $index++) {
+            $first->replicate()->save();
+        }
+
+        $path = app(CustomerOfferPdfExporter::class)->export($offer->fresh(), CustomerOfferPdfTemplate::SimpleEn);
+
+        try {
+            $this->assertGreaterThan(1, preg_match_all('/\/Type\s*\/Page\b/', file_get_contents($path)));
+        } finally {
+            @unlink($path);
+        }
     }
 }

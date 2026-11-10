@@ -2,6 +2,7 @@
 
 namespace App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\Pages;
 
+use App\Modules\CustomerOffers\Enums\CustomerOfferPdfTemplate;
 use App\Modules\CustomerOffers\Filament\Resources\CustomerOffers\CustomerOfferResource;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Services\CustomerOfferAcceptor;
@@ -13,6 +14,7 @@ use App\Modules\SalesOrders\Filament\Resources\SalesOrders\SalesOrderResource;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -21,6 +23,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -117,8 +120,19 @@ class EditCustomerOffer extends EditRecord
                 ->label(__('Generate PDF offer'))
                 ->icon(Heroicon::OutlinedDocumentArrowDown)
                 ->color('danger')
-                ->action(function (CustomerOffer $record): StreamedResponse {
-                    $path = app(CustomerOfferPdfExporter::class)->export($record);
+                ->modalHeading(__('Choose offer template'))
+                ->modalSubmitActionLabel(__('Generate PDF'))
+                ->schema([
+                    Radio::make('template')
+                        ->label(__('Offer template'))
+                        ->options(CustomerOfferPdfTemplate::options())
+                        ->default(CustomerOfferPdfTemplate::Complex->value)
+                        ->required()
+                        ->rules([Rule::enum(CustomerOfferPdfTemplate::class)]),
+                ])
+                ->action(function (CustomerOffer $record, array $data): StreamedResponse {
+                    Gate::authorize('view', $record);
+                    $path = app(CustomerOfferPdfExporter::class)->export($record, CustomerOfferPdfTemplate::from($data['template']));
 
                     $filename = 'oferta-'.($record->offer_number ?: $record->getKey()).'.pdf';
 

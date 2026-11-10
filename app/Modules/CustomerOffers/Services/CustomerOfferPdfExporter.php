@@ -3,6 +3,7 @@
 namespace App\Modules\CustomerOffers\Services;
 
 use App\Models\Tenant;
+use App\Modules\CustomerOffers\Enums\CustomerOfferPdfTemplate;
 use App\Modules\CustomerOffers\Models\CustomerOffer;
 use App\Modules\CustomerOffers\Models\CustomerOfferItem;
 use App\Modules\TenantSettings\Services\TenantBankAccounts;
@@ -38,9 +39,10 @@ class CustomerOfferPdfExporter
      * Write the offer PDF to a temporary file and return its path. The caller is
      * responsible for streaming and deleting it.
      */
-    public function export(CustomerOffer $offer): string
+    public function export(CustomerOffer $offer, CustomerOfferPdfTemplate $template = CustomerOfferPdfTemplate::Complex): string
     {
-        $html = View::make('pdf.customer-offer', $this->buildViewData($offer))->render();
+        $html = View::make($template->view(), $this->buildViewData($offer, $template))->render();
+        $isComplex = $template === CustomerOfferPdfTemplate::Complex;
 
         $tempDir = storage_path('app/mpdf');
 
@@ -54,13 +56,13 @@ class CustomerOfferPdfExporter
         $mpdf = new Mpdf([
             'mode' => 'utf-8',
             'format' => 'A4',
-            'margin_left' => 0,
-            'margin_right' => 0,
-            'margin_top' => 0,
+            'margin_left' => $isComplex ? 0 : 14,
+            'margin_right' => $isComplex ? 0 : 14,
+            'margin_top' => $isComplex ? 0 : 11,
             // Reserve space for the red footer bar, which is pinned to the bottom
             // of every page via an mpdf page footer in the template.
-            'margin_bottom' => 20,
-            'margin_footer' => 0,
+            'margin_bottom' => $isComplex ? 20 : 14,
+            'margin_footer' => $isComplex ? 0 : 7,
             // Inter, embedded as selectable/searchable text. Separate families give
             // per-weight control (mpdf only exposes R/B per family).
             'fontDir' => array_merge($fontDirs, [resource_path('fonts/inter')]),
@@ -75,7 +77,7 @@ class CustomerOfferPdfExporter
 
         $mpdf->WriteHTML($html);
 
-        $path = tempnam(sys_get_temp_dir(), 'offer_').'.pdf';
+        $path = tempnam(sys_get_temp_dir(), 'offer_');
         $mpdf->Output($path, Destination::FILE);
 
         return $path;
@@ -87,7 +89,7 @@ class CustomerOfferPdfExporter
      *
      * @return array<string, mixed>
      */
-    public function buildViewData(CustomerOffer $offer): array
+    public function buildViewData(CustomerOffer $offer, CustomerOfferPdfTemplate $template = CustomerOfferPdfTemplate::Complex): array
     {
         $offer->loadMissing([
             'tenant',
@@ -103,11 +105,14 @@ class CustomerOfferPdfExporter
         $currency = $offer->currency ?: 'RON';
 
         $items = $offer->items->values()
-            ->map(fn (CustomerOfferItem $item, int $index): array => $this->mapItem($item, $index, $currency))
+            ->map(fn (CustomerOfferItem $item, int $index): array => $this->mapItem($item, $index, $currency, $template))
             ->all();
 
         return [
             'red' => self::RED,
+            'documentLocale' => $template->locale(),
+            'simpleLogo' => public_path(self::ASSET_DIR.'/simple-logo.png'),
+            'labels' => $this->simpleLabels($template->locale()),
             'supplier' => [
                 'brand' => $tenant?->name ?: __('Ofertă'),
                 'name' => $tenant?->legal_name ?: ($tenant?->name ?? '-'),
@@ -138,8 +143,9 @@ class CustomerOfferPdfExporter
             // Only show the photo column when at least one line actually has one,
             // so offers without product images don't carry an empty column.
             'hasProductImages' => collect($items)->contains(fn (array $item): bool => $item['image'] !== null),
-            'total' => $this->number($this->resolveTotal($offer)),
+            'total' => $this->number($this->resolveTotal($offer), $template->locale()),
             'notes' => $this->notes($offer),
+            'additionalNotes' => filled($offer->notes) ? $this->notes($offer) : [],
             'qr' => $tenant?->website ?: config('app.url'),
             // Drop-in header/footer artwork; falls back to the bundled banner.
             'banner' => $this->pdfSafeImage($this->assetImage('banner') ?? public_path(self::ASSET_DIR.'/banner.png')),
@@ -150,7 +156,7 @@ class CustomerOfferPdfExporter
     /**
      * @return array<string, mixed>
      */
-    private function mapItem(CustomerOfferItem $item, int $index, string $currency): array
+    private function mapItem(CustomerOfferItem $item, int $index, string $currency, CustomerOfferPdfTemplate $template): array
     {
         $supplierProduct = $item->supplierProduct;
 
@@ -169,11 +175,11 @@ class CustomerOfferPdfExporter
             'description' => $description,
             'image' => $this->itemImagePath($item),
             'um' => $item->unit?->symbol ?: 'KG',
-            'quantity' => $this->number($quantity),
-            'unit_price' => $this->number($price),
+            'quantity' => $this->number($quantity, $template->locale()),
+            'unit_price' => $this->number($price, $template->locale()),
             'currency' => $currency,
-            'discount' => $this->number(0).'%',
-            'value' => $this->number($value),
+            'discount' => $this->number(0, $template->locale()).'%',
+            'value' => $this->number($value, $template->locale()),
         ];
     }
 
@@ -328,8 +334,30 @@ class CustomerOfferPdfExporter
         return filled($value) ? $value : '-';
     }
 
-    private function number(float $value): string
+    /** @return array<string, string> */
+    private function simpleLabels(string $locale): array
     {
-        return number_format($value, 2, ',', '.');
+        return collect([
+            'title' => 'Commercial Offer No. :number dated :date',
+            'supplier' => 'Supplier',
+            'buyer' => 'Buyer',
+            'taxId' => 'Tax ID',
+            'registration' => 'Registration No.',
+            'locality' => 'Locality',
+            'contact' => 'Phone / Email',
+            'number' => 'No.',
+            'product' => 'Product name',
+            'unit' => 'UoM',
+            'quantity' => 'Quantity',
+            'unitPrice' => 'Unit price',
+            'value' => 'Value',
+            'asOrdered' => 'As ordered',
+            'note' => 'Note: Prices exclude VAT. Transport is included.',
+        ])->map(fn (string $label): string => __($label, [], $locale))->all();
+    }
+
+    private function number(float $value, string $locale = 'ro'): string
+    {
+        return $locale === 'en' ? number_format($value, 2, '.', ',') : number_format($value, 2, ',', '.');
     }
 }
