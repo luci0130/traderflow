@@ -72,7 +72,9 @@ class CustomerOffer extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(CustomerOfferItem::class);
+        $items = $this->hasMany(CustomerOfferItem::class);
+
+        return $items->orderBy($items->getRelated()->getQualifiedKeyName());
     }
 
     public function supplierOffers(): HasMany

@@ -16,9 +16,12 @@ use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\Products
 use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\ReviewsRelationManager;
 use App\Modules\Suppliers\Filament\Resources\Suppliers\RelationManagers\UsersRelationManager;
 use App\Modules\Suppliers\Models\Supplier;
+use App\Modules\Suppliers\Support\SupplierPhoneNumber;
+use App\Support\Countries;
 use App\Support\CountryFilter;
 use App\Support\StatusColors;
 use BackedEnum;
+use Closure;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -28,7 +31,10 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -116,7 +122,46 @@ class SupplierResource extends Resource
                         TextInput::make('vat_number')->maxLength(255),
                         TextInput::make('registration_number')->maxLength(255),
                         TextInput::make('email')->email()->maxLength(255),
-                        TextInput::make('phone')->maxLength(255),
+                        Grid::make(['default' => 1, 'sm' => 2])
+                            ->columnSpanFull()
+                            ->schema([
+                                Select::make('phone_country')
+                                    ->label(__('Country calling code'))
+                                    ->options(fn (): array => self::countryOptions(includeCallingCodes: true))
+                                    ->default('RO')
+                                    ->searchable()
+                                    ->native(false)
+                                    ->allowHtml()
+                                    ->wrapOptionLabels(false)
+                                    ->required(fn (Get $get): bool => filled($get('phone')))
+                                    ->dehydrated(false),
+                                TextInput::make('phone')
+                                    ->label(__('Phone'))
+                                    ->tel()
+                                    ->autocomplete('tel-national')
+                                    ->maxLength(50)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+                                        if (! preg_match('/^(?:\+|00)/', trim((string) $state))) {
+                                            return;
+                                        }
+
+                                        $parts = SupplierPhoneNumber::split($state, $get('phone_country'));
+
+                                        if (SupplierPhoneNumber::normalize($state, $parts['country']) !== null) {
+                                            $set('phone_country', $parts['country']);
+                                            $set('phone', $parts['number']);
+                                        }
+                                    })
+                                    ->rules([
+                                        fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                                            if (SupplierPhoneNumber::normalize($value, $get('phone_country')) === null) {
+                                                $fail(__('Enter a valid phone number for the selected country calling code.'));
+                                            }
+                                        },
+                                    ])
+                                    ->dehydrateStateUsing(fn (?string $state, Get $get): ?string => SupplierPhoneNumber::normalize($state, $get('phone_country'))),
+                            ]),
                         TextInput::make('contact_person')->maxLength(255),
                         Select::make('status')
                             ->options([
@@ -131,7 +176,20 @@ class SupplierResource extends Resource
                     ->collapsible()
                     ->collapsed()
                     ->schema([
-                        TextInput::make('country')->maxLength(255),
+                        Select::make('country')
+                            ->label(__('Country'))
+                            ->options(fn (?Supplier $record): array => self::countryOptions($record))
+                            ->formatStateUsing(fn (?string $state): ?string => Countries::normalize($state))
+                            ->searchable()
+                            ->native(false)
+                            ->allowHtml()
+                            ->wrapOptionLabels(false)
+                            ->live()
+                            ->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+                                if (blank($get('phone')) && Countries::isValid($state)) {
+                                    $set('phone_country', $state);
+                                }
+                            }),
                         TextInput::make('city')->maxLength(255),
                         TextInput::make('postal_code')->maxLength(255),
                         Textarea::make('address')->columnSpanFull(),
@@ -193,6 +251,31 @@ class SupplierResource extends Resource
                     ])
                     ->columns(2),
             ]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function countryOptions(?Supplier $record = null, bool $includeCallingCodes = false): array
+    {
+        $options = [];
+
+        foreach (Countries::options() as $code => $label) {
+            $callingCode = $includeCallingCodes ? SupplierPhoneNumber::callingCode($code) : null;
+            $options[$code] = view('filament.forms.country-select-option', [
+                'code' => $code,
+                'label' => $label,
+                'callingCode' => $callingCode,
+            ])->render();
+        }
+
+        $existingCountry = Countries::normalize($record?->country);
+
+        if (! $includeCallingCodes && filled($existingCountry) && ! isset($options[$existingCountry])) {
+            $options[$existingCountry] = e($existingCountry);
+        }
+
+        return $options;
     }
 
     public static function table(Table $table): Table

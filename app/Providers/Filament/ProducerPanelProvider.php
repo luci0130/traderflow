@@ -48,7 +48,10 @@ class ProducerPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Emerald,
             ])
-            ->brandName(__('TradeFlow Producers'))
+            ->brandName(config('malcara.name'))
+            ->brandLogo(fn (): string => asset(config('malcara.logo')))
+            ->darkModeBrandLogo(fn (): string => asset(config('malcara.logo_white')))
+            ->brandLogoHeight('3rem')
             ->discoverResources(
                 in: app_path('Modules/Producers/Filament/Resources/SupplierProducts'),
                 for: 'App\Modules\Producers\Filament\Resources\SupplierProducts',
@@ -75,7 +78,8 @@ class ProducerPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            ->persistentMiddleware([SetLocale::class]);
 
         // The Vite-built theme is only available once the frontend has been
         // built (manifest present). During the Docker image build, artisan

@@ -18,6 +18,7 @@ use App\Modules\SupplierOrders\Models\SupplierOrder;
 use App\Modules\Suppliers\Models\Supplier;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -72,6 +73,69 @@ class CustomerOfferTransportCostTest extends TestCase
     private function board(CustomerOffer $offer): Testable
     {
         return Livewire::test(ItemsRelationManager::class, ['ownerRecord' => $offer, 'pageClass' => EditCustomerOffer::class]);
+    }
+
+    /** @return array<string, array{string, string, float}> */
+    public static function orderingChanges(): array
+    {
+        return [
+            'transport cost' => ['saveSourcing', 'transport_cost', 12.5],
+            'secured quantity' => ['saveSourcing', 'secured_quantity', 30],
+            'margin' => ['saveSale', 'margin_percent', 35],
+            'sale price' => ['saveSale', 'sale_price', 7],
+        ];
+    }
+
+    #[DataProvider('orderingChanges')]
+    public function test_inline_edits_preserve_product_and_supplier_group_order(string $method, string $field, float $value): void
+    {
+        [$offer, $firstItem, $firstSource] = $this->offer();
+        $firstItem->product->update(['name' => 'Zucchini']);
+        $firstItem->update(['purchase_price' => 5]);
+        $secondItem = $offer->items()->create([
+            'tenant_id' => $this->tenant->id, 'product_id' => Product::create(['name' => 'Apples'])->id,
+            'quantity' => 20, 'purchase_price' => 8, 'sale_price' => 12, 'tax_rate' => 0,
+        ]);
+        $secondItem->suppliers()->create([
+            'supplier_id' => $firstSource->supplier_id, 'priority' => 1,
+            'unit_price' => 8, 'secured_quantity' => 10, 'currency' => 'RON',
+        ]);
+        $thirdItem = $offer->items()->create([
+            'tenant_id' => $this->tenant->id, 'product_id' => Product::create(['name' => 'Carrots'])->id,
+            'quantity' => 40, 'purchase_price' => 2, 'sale_price' => 4, 'tax_rate' => 0,
+        ]);
+        $otherSupplier = Supplier::create(['name' => 'Another supplier']);
+        $thirdItem->suppliers()->create([
+            'supplier_id' => $otherSupplier->id, 'priority' => 1,
+            'unit_price' => 2, 'secured_quantity' => 30, 'currency' => 'RON',
+        ]);
+        $alternative = $firstItem->suppliers()->create([
+            'supplier_id' => $otherSupplier->id, 'priority' => 2, 'unit_price' => 6, 'currency' => 'RON',
+        ]);
+        $itemIds = [$firstItem->id, $secondItem->id, $thirdItem->id];
+        $component = $this->board($offer)->assertSuccessful();
+        $this->assertSame($itemIds, $component->instance()->boardItems()->modelKeys());
+        $previousScanOrder = (int) DB::scalar('PRAGMA reverse_unordered_selects');
+
+        try {
+            DB::statement('PRAGMA reverse_unordered_selects = ON');
+
+            $component->call($method, $method === 'saveSourcing' ? $firstSource->id : $firstItem->id, $field, $value)
+                ->assertHasNoErrors();
+
+            $this->assertSame($itemIds, $component->instance()->boardItems()->modelKeys());
+            $component->assertSeeHtmlInOrder(array_map(fn (int $id): string => 'wire:key="offer-product-'.$id.'"', $itemIds));
+            $this->assertSame($itemIds, $offer->fresh()->load('items')->items->modelKeys());
+            $this->assertSame([$firstSource->id, $alternative->id], $component->instance()->boardItems()->first()->suppliers->modelKeys());
+            $groups = $component->instance()->supplierGroups();
+            $this->assertSame([$firstSource->supplier_id, $otherSupplier->id], $groups->map(fn (array $group): int => $group['supplier']->id)->all());
+            $this->assertSame([$firstItem->id, $secondItem->id], $groups->first()['rows']->pluck('customer_offer_item_id')->all());
+            $this->assertSame([$firstItem->id, $thirdItem->id], $groups->last()['rows']->pluck('customer_offer_item_id')->all());
+            $edited = $method === 'saveSourcing' ? $firstSource->fresh() : $firstItem->fresh();
+            $this->assertEquals($value, $edited->{$field});
+        } finally {
+            DB::statement('PRAGMA reverse_unordered_selects = '.$previousScanOrder);
+        }
     }
 
     public function test_transport_is_saved_per_product_supplier_row_and_total_and_margin_recalculate(): void
