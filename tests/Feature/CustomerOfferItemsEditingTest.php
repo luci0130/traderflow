@@ -225,7 +225,7 @@ class CustomerOfferItemsEditingTest extends TestCase
         $item = $offer->items()->sole();
         $removed = $item->suppliers()->first();
         $retained = $item->suppliers()->where('supplier_product_id', $second->id)->sole();
-        $retained->update(['landed_cost' => 8, 'secured_quantity' => 10]);
+        $retained->update(['transport_cost' => 30, 'secured_quantity' => 10]);
 
         $otherProduct = Product::create(['tenant_id' => $this->tenant->id, 'name' => 'Other']);
         $otherItem = $offer->items()->create(['tenant_id' => $this->tenant->id, 'product_id' => $otherProduct->id, 'quantity' => 1, 'sale_price' => 1]);
@@ -303,7 +303,7 @@ class CustomerOfferItemsEditingTest extends TestCase
 
         $this->board($offer)->assertActionHidden('addProducts')->assertActionHidden('deleteItem')->assertActionHidden('deleteSupplier')
             ->call('saveSale', $item->id, 'sale_price', 100)
-            ->call('saveSourcing', $row->id, 'landed_cost', 100)
+            ->call('saveSourcing', $row->id, 'transport_cost', 100)
             ->call('saveInclude', $row->id, false);
         Livewire::test(OfferProductPicker::class, ['offerId' => $offer->id])->assertForbidden();
         Livewire::test(EditCustomerOffer::class, ['record' => $offer->id])
@@ -341,7 +341,7 @@ class CustomerOfferItemsEditingTest extends TestCase
         app(SupermarketOfferBuilder::class)->appendSelection($offer, [$canonical->id => [$product->id, $second->id]]);
         $item = $offer->items()->sole();
         $item->update(['quantity' => 17, 'sale_price' => 11]);
-        $item->suppliers()->first()->update(['landed_cost' => 6, 'secured_quantity' => 9]);
+        $item->suppliers()->first()->update(['transport_cost' => 9, 'secured_quantity' => 9]);
         $offer->update(['status' => 'accepted', 'sent_at' => now()]);
         $order = SalesOrder::create([
             'tenant_id' => $this->tenant->id, 'customer_offer_id' => $offer->id,
@@ -365,6 +365,7 @@ class CustomerOfferItemsEditingTest extends TestCase
         $this->assertSame($item->quantity, $copiedItem->quantity);
         $this->assertSame($item->suppliers()->pluck('supplier_id')->all(), $copiedItem->suppliers()->pluck('supplier_id')->all());
         $this->assertSame('9.0000', $copiedItem->suppliers()->first()->secured_quantity);
+        $this->assertSame('9.0000', $copiedItem->suppliers()->first()->transport_cost);
         $this->assertSame($offer->fresh()->total, $duplicate->total);
         $this->assertSame('accepted', $offer->fresh()->status);
         $this->assertModelExists($order);

@@ -140,3 +140,105 @@ test('adding selected products refreshes Items and removing the last supplier re
     ).toBeVisible();
     expect(errors).toEqual([]);
 });
+
+test('transport costs are saved per supplier and totals recalculate automatically', async ({
+    page,
+}) => {
+    test.skip(
+        process.env.PLAYWRIGHT_OFFER_FIXTURES !== '1',
+        'Requires CustomerOfferEditingTestSeeder in an isolated database.',
+    );
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('mihai@traderflow.test');
+    await page.locator('input[type="password"]').fill('password');
+    await page.getByRole('button', { name: /sign in|autentificare/i }).click();
+    await page.waitForURL((url) => !url.pathname.endsWith('/login'));
+    await page.goto(
+        process.env.PLAYWRIGHT_OFFER_PATH ?? '/customer-offers/1/edit',
+    );
+    await page
+        .getByRole('button', { name: 'Add product', exact: true })
+        .click();
+    const modal = page.getByRole('dialog').last();
+    await modal.getByRole('button', { name: 'Toggle prices' }).first().click();
+    await modal
+        .getByTitle('Add to the offer at the next priority')
+        .first()
+        .click();
+    await expect(
+        modal.getByTitle('Priority 1 — click to remove'),
+    ).toBeVisible();
+    await modal
+        .getByTitle('Add to the offer at the next priority')
+        .first()
+        .click();
+    await expect(
+        modal.getByTitle('Priority 2 — click to remove'),
+    ).toBeVisible();
+    await modal
+        .getByRole('button', { name: 'Add selected products (1)', exact: true })
+        .click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const rows = page.locator('tr:visible').filter({
+        has: page.getByRole('spinbutton', {
+            name: 'Transport cost (RON)',
+            exact: true,
+        }),
+    });
+    await expect(rows).toHaveCount(2);
+    await rows
+        .first()
+        .getByRole('spinbutton', { name: 'Secured qty', exact: true })
+        .fill('20');
+    await rows
+        .first()
+        .getByRole('spinbutton', { name: 'Transport cost (RON)', exact: true })
+        .fill('10');
+    await expect(rows.first().locator('[data-sourcing-total]')).toHaveText(
+        '110.00 RON',
+    );
+    await expect(
+        rows.last().getByRole('spinbutton', {
+            name: 'Transport cost (RON)',
+            exact: true,
+        }),
+    ).toHaveValue('0.0000');
+    await rows
+        .last()
+        .getByRole('spinbutton', { name: 'Secured qty', exact: true })
+        .fill('10');
+    await rows
+        .last()
+        .getByRole('spinbutton', { name: 'Transport cost (RON)', exact: true })
+        .fill('7');
+    await expect(rows.last().locator('[data-sourcing-total]')).toHaveText(
+        '57.00 RON',
+    );
+
+    await page.reload();
+    await expect(
+        rows.first().getByRole('spinbutton', {
+            name: 'Transport cost (RON)',
+            exact: true,
+        }),
+    ).toHaveValue('10.0000');
+    await expect(
+        rows.last().getByRole('spinbutton', {
+            name: 'Transport cost (RON)',
+            exact: true,
+        }),
+    ).toHaveValue('7.0000');
+    await expect(rows.first().locator('[data-sourcing-total]')).toHaveText(
+        '110.00 RON',
+    );
+    await expect(rows.last().locator('[data-sourcing-total]')).toHaveText(
+        '57.00 RON',
+    );
+
+    await page.getByRole('button', { name: 'Suppliers', exact: true }).click();
+    await expect(page.locator('[data-sourcing-total]:visible')).toHaveText([
+        '110.00 RON',
+        '57.00 RON',
+    ]);
+});

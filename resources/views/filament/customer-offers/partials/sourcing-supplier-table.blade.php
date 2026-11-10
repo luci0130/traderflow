@@ -19,6 +19,7 @@
                  product's country of origin. --}}
             <th class="py-2 pr-3 font-medium">{{ $nameColumn === 'product' ? __('Country of origin') : __('City') }}</th>
             <th class="py-2 pr-3 font-medium">{{ __('Product price') }}</th>
+            <th class="py-2 pr-3 font-medium">{{ __('Transport cost') }}</th>
             <th class="py-2 pr-3 font-medium">{{ __('Total cost') }}</th>
             <th class="py-2 pr-3 font-medium">{{ __('Secured qty') }}</th>
             @if ($canManageItems)
@@ -73,18 +74,30 @@
                 <td class="py-2 pr-3">
                     @if ($editsSourcing)
                         <div class="w-28">
-                            <input type="number" step="any" min="0" value="{{ $row->landed_cost }}"
-                                wire:change="saveSourcing({{ $row->id }}, 'landed_cost', $event.target.value)" class="{{ $inputClass }}" />
+                            <input type="number" step="0.0001" min="0" value="{{ $row->transport_cost }}"
+                                aria-label="{{ __('Transport cost') }} ({{ $row->currency }})"
+                                wire:input.debounce.500ms="saveSourcing({{ $row->id }}, 'transport_cost', $event.target.value)" class="{{ $inputClass }}" />
+                            <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ $row->currency }}</span>
+                            @error('sourcing.'.$row->id.'.transport_cost')
+                                <p class="text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
+                            @enderror
                         </div>
                     @else
-                        <span class="text-gray-900 dark:text-white">{{ $fmt($row->landed_cost) }}</span>
+                        <span class="text-gray-900 dark:text-white">{{ $fmt($row->transport_cost) }} {{ $row->currency }}</span>
                     @endif
+                </td>
+                <td class="py-2 pr-3 text-gray-900 dark:text-white" data-sourcing-total="{{ $row->id }}">
+                    {{ $row->total_cost !== null ? $fmt($row->total_cost).' '.$row->currency : '—' }}
                 </td>
                 <td class="py-2 pr-3">
                     @if ($editsSourcing)
                         <div class="w-28">
                             <input type="number" step="any" min="0" value="{{ $row->secured_quantity }}"
-                                wire:change="saveSourcing({{ $row->id }}, 'secured_quantity', $event.target.value)" class="{{ $inputClass }}" />
+                                aria-label="{{ __('Secured qty') }}"
+                                wire:input.debounce.500ms="saveSourcing({{ $row->id }}, 'secured_quantity', $event.target.value)" class="{{ $inputClass }}" />
+                            @error('sourcing.'.$row->id.'.secured_quantity')
+                                <p class="text-xs text-danger-600 dark:text-danger-400">{{ $message }}</p>
+                            @enderror
                         </div>
                     @else
                         <span class="text-gray-900 dark:text-white">{{ $fmt($row->secured_quantity) }}</span>

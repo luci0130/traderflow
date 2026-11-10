@@ -14,6 +14,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 
@@ -150,12 +151,12 @@ class ItemsRelationManager extends RelationManager
     }
 
     /**
-     * Persist a buy-side cell (landed cost / secured qty) and roll it up onto its
+     * Persist a buy-side cell (transport cost / secured qty) and roll it up onto its
      * offer line's purchase price.
      */
     public function saveSourcing(int $rowId, string $field, mixed $value): void
     {
-        if (! $this->editsSourcing() || ! in_array($field, ['landed_cost', 'secured_quantity'], true)) {
+        if (! $this->editsSourcing() || ! in_array($field, ['transport_cost', 'secured_quantity'], true)) {
             return;
         }
 
@@ -165,7 +166,13 @@ class ItemsRelationManager extends RelationManager
             return;
         }
 
-        $row->update([$field => ($value === '' || $value === null) ? null : $value]);
+        $value = ($value === '' || $value === null) ? ($field === 'transport_cost' ? 0 : null) : $value;
+        $key = "sourcing.{$rowId}.{$field}";
+        Validator::make(['sourcing' => [$rowId => [$field => $value]]], [
+            $key => ['nullable', 'numeric', 'min:0', 'max:99999999999.9999'],
+        ])->validate();
+        $this->resetValidation($key);
+        $row->update([$field => $value]);
 
         app(RecalculateOfferItemSourcing::class)->sync($row->item->load('suppliers'));
     }

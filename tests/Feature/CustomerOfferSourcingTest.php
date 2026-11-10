@@ -95,16 +95,16 @@ class CustomerOfferSourcingTest extends TestCase
             ->assertSee('Doua SRL');
     }
 
-    public function test_filling_landed_cost_and_secured_quantity_rolls_up_to_the_offer_line(): void
+    public function test_transport_cost_and_secured_quantity_roll_up_to_the_offer_line(): void
     {
         $this->actingAsRole('purchasing_agent');
         [$offer, $item, $rowAId, $rowBId] = $this->offerWithTwoSuppliers();
 
         Livewire::test(ItemsRelationManager::class, ['ownerRecord' => $offer, 'pageClass' => EditCustomerOffer::class])
             ->call('saveSourcing', $rowAId, 'secured_quantity', 60)
-            ->call('saveSourcing', $rowAId, 'landed_cost', 5)
+            ->call('saveSourcing', $rowAId, 'transport_cost', 120)
             ->call('saveSourcing', $rowBId, 'secured_quantity', 40)
-            ->call('saveSourcing', $rowBId, 'landed_cost', 6);
+            ->call('saveSourcing', $rowBId, 'transport_cost', 80);
 
         // Per-supplier entries persist.
         $this->assertSame('60.0000', (string) $item->suppliers()->where('priority', 1)->value('secured_quantity'));
@@ -125,9 +125,9 @@ class CustomerOfferSourcingTest extends TestCase
 
         $component = Livewire::test(ItemsRelationManager::class, ['ownerRecord' => $offer, 'pageClass' => EditCustomerOffer::class])
             ->call('saveSourcing', $rowAId, 'secured_quantity', 60)
-            ->call('saveSourcing', $rowAId, 'landed_cost', 5)
+            ->call('saveSourcing', $rowAId, 'transport_cost', 120)
             ->call('saveSourcing', $rowBId, 'secured_quantity', 40)
-            ->call('saveSourcing', $rowBId, 'landed_cost', 6);
+            ->call('saveSourcing', $rowBId, 'transport_cost', 80);
 
         // Both suppliers kept: weighted average = (60*5 + 40*6) / 100 = 5.40.
         $this->assertSame('5.4000', (string) $item->fresh()->purchase_price);

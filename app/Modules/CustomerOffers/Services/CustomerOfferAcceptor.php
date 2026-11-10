@@ -107,15 +107,14 @@ class CustomerOfferAcceptor
 
     private function lineTotal(CustomerOfferItemSupplier $source): float
     {
-        return (float) $source->secured_quantity * $this->purchasePrice($source);
+        return $source->total_cost ?? 0.0;
     }
 
     /**
-     * The agreed buy price: the landed cost the purchasing agent entered, falling
-     * back to the supplier's offered unit price.
+     * The product price with this row's transport allocated over its secured quantity.
      */
     private function purchasePrice(CustomerOfferItemSupplier $source): float
     {
-        return (float) ($source->landed_cost ?? $source->unit_price ?? 0);
+        return $source->effective_unit_cost ?? 0.0;
     }
 }

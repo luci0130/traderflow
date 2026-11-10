@@ -28,7 +28,7 @@
         @if ($this->getOwnerRecord()->isLocked())
             {{ __('Accepted offers cannot be edited. Duplicate this offer to make changes.') }}
         @else
-        {{ __('Contact the suppliers in priority order and fill in the landed cost and the quantity you secured.') }}
+        {{ __('Contact the suppliers in priority order and fill in the transport cost and the quantity you secured.') }}
         <span class="ml-1 inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
             <span class="inline-block h-3 w-4 rounded ring-1 ring-inset ring-warning-300 bg-warning-50 dark:bg-warning-500/10"></span>
             {{ __('highlighted fields are editable') }}
@@ -64,13 +64,8 @@
                         $prices = $included->pluck('unit_price')->filter(fn ($p) => $p !== null)->map(fn ($p) => (float) $p);
                         $avgPrice = $prices->isNotEmpty() ? $prices->avg() : null;
 
-                        $landedFilled = $included->filter(fn ($s) => $s->landed_cost !== null);
-                        $securedWeight = (float) $landedFilled->sum(fn ($s) => (float) ($s->secured_quantity ?? 0));
-                        $avgLanded = $landedFilled->isEmpty()
-                            ? null
-                            : ($securedWeight > 0
-                                ? $landedFilled->sum(fn ($s) => (float) $s->secured_quantity * (float) $s->landed_cost) / $securedWeight
-                                : $landedFilled->avg(fn ($s) => (float) $s->landed_cost));
+                        $avgLanded = app(\App\Modules\CustomerOffers\Services\RecalculateOfferItemSourcing::class)
+                            ->averageUnitCost($item, $this->getOwnerRecord()->currency);
 
                         $securedTotal = (float) $included->sum(fn ($s) => (float) ($s->secured_quantity ?? 0));
                         $desired = (float) ($item->quantity ?? 0);
